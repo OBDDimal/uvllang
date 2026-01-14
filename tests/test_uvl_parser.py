@@ -83,10 +83,10 @@ class TestCNFConversion:
         model = UVL(from_file=eshop_file)
         cnf = model.to_cnf()
         
-        assert len(cnf) == 289
-        assert len(model.features) == 173
-        assert all(isinstance(clause, list) for clause in cnf)
-        assert all(isinstance(lit, int) for clause in cnf for lit in clause)
+        assert len(cnf.clauses) == 289
+        assert cnf.nv == 173
+        assert all(isinstance(clause, list) for clause in cnf.clauses)
+        assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
 
     def test_cnf_automotive01(self):
         """Test CNF conversion for automotive01.uvl."""
@@ -94,10 +94,10 @@ class TestCNFConversion:
         model = UVL(from_file=auto_file)
         cnf = model.to_cnf()
         
-        assert len(cnf) == 7876  # Updated: arithmetic constraints are now properly ignored
-        assert len(model.features) == 2513
-        assert all(isinstance(clause, list) for clause in cnf)
-        assert all(isinstance(lit, int) for clause in cnf for lit in clause)
+        assert len(cnf.clauses) == 7876  # Updated: arithmetic constraints are now properly ignored
+        assert cnf.nv == 2513
+        assert all(isinstance(clause, list) for clause in cnf.clauses)
+        assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
 
     def test_cnf_root_constraint(self):
         """Test that CNF includes root feature constraint."""
@@ -116,7 +116,7 @@ features
             model = UVL(from_file=temp_file)
             cnf = model.to_cnf()
             
-            assert [1] in cnf
+            assert [1] in cnf.clauses
         finally:
             os.unlink(temp_file)
 
@@ -137,9 +137,9 @@ features
             model = UVL(from_file=temp_file)
             cnf = model.to_cnf()
             
-            assert [1] in cnf
-            assert [-1, 2] in cnf
-            assert [-2, 1] in cnf
+            assert [1] in cnf.clauses
+            assert [-1, 2] in cnf.clauses
+            assert [-2, 1] in cnf.clauses
         finally:
             os.unlink(temp_file)
 
@@ -160,9 +160,9 @@ features
             model = UVL(from_file=temp_file)
             cnf = model.to_cnf()
             
-            assert [1] in cnf
-            assert [-2, 1] in cnf
-            assert [-1, 2] not in cnf
+            assert [1] in cnf.clauses
+            assert [-2, 1] in cnf.clauses
+            assert [-1, 2] not in cnf.clauses
         finally:
             os.unlink(temp_file)
 
@@ -184,9 +184,9 @@ features
             model = UVL(from_file=temp_file)
             cnf = model.to_cnf()
             
-            assert [1] in cnf
-            assert [-1, 2, 3] in cnf
-            assert [-2, -3] in cnf
+            assert [1] in cnf.clauses
+            assert [-1, 2, 3] in cnf.clauses
+            assert [-2, -3] in cnf.clauses
         finally:
             os.unlink(temp_file)
 
@@ -208,8 +208,8 @@ features
             model = UVL(from_file=temp_file)
             cnf = model.to_cnf()
             
-            assert [1] in cnf
-            assert [-1, 2, 3] in cnf
-            assert [-2, -3] not in cnf
+            assert [1] in cnf.clauses
+            assert [-1, 2, 3] in cnf.clauses
+            assert [-2, -3] not in cnf.clauses
         finally:
             os.unlink(temp_file)

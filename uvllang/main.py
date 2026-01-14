@@ -6,6 +6,7 @@ from antlr4.error.ErrorListener import ErrorListener
 from antlr4.tree.Tree import ParseTreeWalker
 from sympy import symbols, to_cnf, Or, And, Not, Implies
 from sympy.logic.boolalg import BooleanFunction
+from pysat.formula import CNF
 
 class CustomErrorListener(ErrorListener):
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
@@ -206,7 +207,7 @@ class UVL:
             verbose_info (bool): Whether to print info messages about ignored constraints.
         
         Returns:
-            list: List of clauses, where each clause is a list of literals.
+            CNF: PySAT CNF object with feature name comments.
         """
         builder = FeatureModelBuilder()
         walker = ParseTreeWalker()
@@ -253,7 +254,12 @@ class UVL:
         if verbose_info and self.arithmetic_constraints:
             print(f"Info: Ignored {len(self.arithmetic_constraints)} arithmetic constraints")
         
-        return clauses
+        # Create PySAT CNF object with feature name comments
+        cnf = CNF(from_clauses=clauses)
+        cnf.comments = [f"c {feature_id} {feature_name}" 
+                       for feature_name, feature_id in feature_to_id.items()]
+        
+        return cnf
     
     def _constraints_to_cnf(self, constraints, feature_to_id):
         """Convert UVL constraints to CNF clauses using sympy."""

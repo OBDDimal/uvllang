@@ -56,12 +56,8 @@ Examples:
                 if len(model.feature_types) > 10:
                     print(f"  ... and {len(model.feature_types) - 10} more")
         
-        cnf = model.to_cnf(verbose_info=not args.verbose)
-
-        with open(output_file, 'w') as f:
-            f.write(f"p cnf {len(model.features)} {len(cnf)}\n")
-            for clause in cnf:
-                f.write(' '.join(map(str, clause)) + ' 0\n')
+        cnf_formula = model.to_cnf(verbose_info=not args.verbose)
+        cnf_formula.to_file(output_file)
 
         print(f"Saved DIMACS to {output_file}")
 

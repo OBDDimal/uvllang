@@ -1,6 +1,6 @@
 # uvllang
 
-A Python parser for the Universal Variability Language (UVL) based on ANTLR4.
+A Python parser for the Universal Variability Language (UVL). Based on ANTLR4, adopted from https://github.com/Universal-Variability-Language/uvl-parser.
 
 ## Installation
 
@@ -10,20 +10,21 @@ pip install uvllang
 
 ## Usage
 
-### Basic Parsing
+### Parsing
 
 ```python
-from uvl.main import UVL
+from uvllang.main import UVL
 
 # Parse a UVL file
-model = UVL(from_file="path/to/file.uvl")
+model = UVL(from_file="examples/automotive01.uvl")
 
 # Access features
-features = model.features
-print(f"Number of features: {len(features)}")
+print(f"Number of features:", len(model.features))
 
 # Access constraints
-constraints = model.constraints
+print("All constraints:", len(model.constraints))
+print("Boolean constraints:", len(model.boolean_constraints))
+print("Arithmetic constraints:", len(model.arithmetic_constraints))
 ```
 
 ### CNF Conversion
@@ -36,54 +37,43 @@ from uvllang.main import UVL
 # Parse UVL file
 model = UVL(from_file="model.uvl")
 
-# Convert to CNF
-cnf_clauses = model.to_cnf()
-
-# Export to DIMACS format
-with open("output.dimacs", 'w') as f:
-    f.write(f"p cnf {len(model.features)} {len(cnf_clauses)}\n")
-    for clause in cnf_clauses:
-        f.write(' '.join(map(str, clause)) + ' 0\n')
+# Convert to CNF (returns PySAT CNF object)
+cnf = model.to_cnf()
+cnf.to_file("output.dimacs")
 ```
 
-Or use the command-line tool:
+### Command Line Interface
 
 ```bash
-# Convert UVL to DIMACS (saves to current directory)
+uvl2cnf --help
+
+# Basic conversion
 uvl2cnf model.uvl
 
 # Specify output file
 uvl2cnf model.uvl output.dimacs
+
+# Verbose mode (lists ignored constraints)
+uvl2cnf model.uvl -v
 ```
 
-The CNF conversion supports:
-- Mandatory and optional features
-- OR groups (at least one child)
-- XOR/Alternative groups (exactly one child)
-- Cross-tree constraints (using sympy)
+## Dependencies
 
-### Backward Compatibility
-
-```python
-import uvl
-
-# Legacy API still supported
-tree = uvl.get_tree("path/to/file.uvl")
-features = uvl.get_features("path/to/file.uvl")
-constraints = uvl.get_constraints("path/to/file.uvl")
-```
+- `antlr4-python3-runtime`: ANTLR4 parser runtime
+- `sympy`: Symbolic mathematics for Boolean constraint processing
+- `python-sat`: SAT solver library for CNF handling
 
 ## Testing
 
 ```bash
 # Install development dependencies
-pip install -e ".[dev]"
+pip install -e .
 
 # Run tests
 python -m pytest tests/
 ```
 
-## Packaging (For Developers)
+## Development
 
 ```bash
 # Generate parsers from grammar files
