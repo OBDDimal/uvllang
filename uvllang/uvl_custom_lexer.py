@@ -1,11 +1,11 @@
 import re
-from .UVLPythonLexer import UVLPythonLexer
+from .uvl_python_lexer import uvl_python_lexer
 
-from .UVLPythonParser import UVLPythonParser
+from .uvl_python_parser import uvl_python_parser
 from antlr4.Token import Token
 from antlr4.Token import CommonToken
 
-class UVLCustomLexer(UVLPythonLexer):
+class uvl_custom_lexer(uvl_python_lexer):
    
     def __init__(self, input_stream):
         super().__init__(input_stream)
@@ -26,7 +26,7 @@ class UVLCustomLexer(UVLPythonLexer):
                 del self.tokens[-1]
 
             # First emit an extra line break that serves as the end of the statement.
-            self.emitToken(self.common_token(UVLPythonLexer.NEWLINE, "\n"));
+            self.emitToken(self.common_token(uvl_python_lexer.NEWLINE, "\n"));
 
 
             # Now emit as much DEDENT tokens as needed.
@@ -90,7 +90,7 @@ class UVLCustomLexer(UVLPythonLexer):
             self.skip()
         elif indent > previous:
             self.indents.append(indent)
-            self.emitToken(self.common_token(UVLPythonParser.INDENT, spaces))
+            self.emitToken(self.common_token(uvl_python_parser.INDENT, spaces))
         else:
             while len(self.indents) > 0 and self.indents[-1] > indent:
                 self.emitToken(self.create_dedent())

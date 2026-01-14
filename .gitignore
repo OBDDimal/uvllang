@@ -5,12 +5,56 @@
 .project
 .idea
 
-# Python virtual environments
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 env
-build
-python/uvl/__pycache__
-python/uvl/*
-!python/uvl/UVLCustomLexer.py
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Generated DIMACS files
+*.dimacs
+
+# ANTLR generated files (but we keep the committed ones)
+# Uncomment to ignore all generated files:
+# uvl/UVLPython*.py
+# uvl/*Parser*.py
+# uvl/*Lexer*.py
 
 # Node.js
 js/node_modules

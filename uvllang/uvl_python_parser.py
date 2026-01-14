@@ -1,0 +1,3947 @@
+# Generated from uvl_python_parser.g4 by ANTLR 4.13.2
+# encoding: utf-8
+from antlr4 import *
+from io import StringIO
+import sys
+if sys.version_info[1] > 5:
+	from typing import TextIO
+else:
+	from typing.io import TextIO
+
+def serializedATN():
+    return [
+        4,1,62,434,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
+        6,2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,
+        2,14,7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,
+        7,20,2,21,7,21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,26,
+        2,27,7,27,2,28,7,28,2,29,7,29,2,30,7,30,2,31,7,31,2,32,7,32,2,33,
+        7,33,2,34,7,34,2,35,7,35,2,36,7,36,2,37,7,37,1,0,3,0,78,8,0,1,0,
+        3,0,81,8,0,1,0,3,0,84,8,0,1,0,3,0,87,8,0,1,0,3,0,90,8,0,1,0,3,0,
+        93,8,0,1,0,3,0,96,8,0,1,0,3,0,99,8,0,1,0,3,0,102,8,0,1,0,1,0,1,1,
+        1,1,1,1,1,1,5,1,110,8,1,10,1,12,1,113,9,1,1,1,1,1,1,2,1,2,1,2,1,
+        3,1,3,1,3,1,4,1,4,1,4,1,4,5,4,127,8,4,10,4,12,4,130,9,4,1,4,1,4,
+        1,5,1,5,1,5,3,5,137,8,5,1,5,1,5,1,6,1,6,1,6,1,6,1,6,1,6,1,7,1,7,
+        1,7,1,7,1,7,1,7,1,7,1,7,1,7,1,7,3,7,157,8,7,1,8,1,8,1,8,4,8,162,
+        8,8,11,8,12,8,163,1,8,1,8,1,9,3,9,169,8,9,1,9,1,9,3,9,173,8,9,1,
+        9,3,9,176,8,9,1,9,1,9,1,9,4,9,181,8,9,11,9,12,9,182,1,9,1,9,3,9,
+        187,8,9,1,10,1,10,1,10,1,11,1,11,1,11,1,11,5,11,196,8,11,10,11,12,
+        11,199,9,11,3,11,201,8,11,1,11,1,11,1,12,1,12,3,12,207,8,12,1,13,
+        1,13,3,13,211,8,13,1,14,1,14,1,15,1,15,1,15,1,15,1,15,1,15,1,15,
+        3,15,222,8,15,1,16,1,16,1,16,1,16,5,16,228,8,16,10,16,12,16,231,
+        9,16,3,16,233,8,16,1,16,1,16,1,17,1,17,1,17,1,17,3,17,241,8,17,1,
+        18,1,18,1,18,1,18,5,18,247,8,18,10,18,12,18,250,9,18,3,18,252,8,
+        18,1,18,1,18,1,19,1,19,1,19,1,19,5,19,260,8,19,10,19,12,19,263,9,
+        19,1,19,1,19,1,20,1,20,1,20,1,21,1,21,1,21,1,21,1,21,1,21,1,21,1,
+        21,1,21,3,21,279,8,21,1,21,1,21,1,21,1,21,1,21,1,21,1,21,1,21,1,
+        21,1,21,1,21,1,21,5,21,293,8,21,10,21,12,21,296,9,21,1,22,1,22,1,
+        22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,
+        22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,3,22,322,8,22,1,23,1,
+        23,1,24,1,24,1,24,1,24,1,24,1,24,1,24,1,24,1,24,5,24,335,8,24,10,
+        24,12,24,338,9,24,1,25,1,25,1,25,1,25,1,25,1,25,1,25,1,25,1,25,5,
+        25,349,8,25,10,25,12,25,352,9,25,1,26,1,26,1,26,1,26,1,26,1,26,1,
+        26,1,26,1,26,3,26,363,8,26,1,27,1,27,1,27,1,27,3,27,369,8,27,1,28,
+        1,28,1,28,1,28,1,28,3,28,376,8,28,1,28,1,28,1,28,1,29,1,29,1,29,
+        1,29,1,29,3,29,386,8,29,1,29,1,29,1,29,1,30,1,30,1,30,1,30,1,30,
+        1,31,1,31,1,31,1,31,1,31,1,31,1,31,1,31,1,31,1,31,3,31,406,8,31,
+        1,32,1,32,1,32,5,32,411,8,32,10,32,12,32,414,9,32,1,32,1,32,1,33,
+        1,33,1,34,1,34,1,35,1,35,1,35,1,35,3,35,426,8,35,3,35,428,8,35,1,
+        36,1,36,1,37,1,37,1,37,0,3,42,48,50,38,0,2,4,6,8,10,12,14,16,18,
+        20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,
+        64,66,68,70,72,74,0,4,1,0,59,60,1,0,20,23,2,0,21,21,29,29,1,0,30,
+        33,463,0,77,1,0,0,0,2,105,1,0,0,0,4,116,1,0,0,0,6,119,1,0,0,0,8,
+        122,1,0,0,0,10,133,1,0,0,0,12,140,1,0,0,0,14,156,1,0,0,0,16,158,
+        1,0,0,0,18,168,1,0,0,0,20,188,1,0,0,0,22,191,1,0,0,0,24,206,1,0,
+        0,0,26,208,1,0,0,0,28,212,1,0,0,0,30,221,1,0,0,0,32,223,1,0,0,0,
+        34,240,1,0,0,0,36,242,1,0,0,0,38,255,1,0,0,0,40,266,1,0,0,0,42,278,
+        1,0,0,0,44,321,1,0,0,0,46,323,1,0,0,0,48,325,1,0,0,0,50,339,1,0,
+        0,0,52,362,1,0,0,0,54,368,1,0,0,0,56,370,1,0,0,0,58,380,1,0,0,0,
+        60,390,1,0,0,0,62,405,1,0,0,0,64,412,1,0,0,0,66,417,1,0,0,0,68,419,
+        1,0,0,0,70,421,1,0,0,0,72,429,1,0,0,0,74,431,1,0,0,0,76,78,3,6,3,
+        0,77,76,1,0,0,0,77,78,1,0,0,0,78,80,1,0,0,0,79,81,5,9,0,0,80,79,
+        1,0,0,0,80,81,1,0,0,0,81,83,1,0,0,0,82,84,3,2,1,0,83,82,1,0,0,0,
+        83,84,1,0,0,0,84,86,1,0,0,0,85,87,5,9,0,0,86,85,1,0,0,0,86,87,1,
+        0,0,0,87,89,1,0,0,0,88,90,3,8,4,0,89,88,1,0,0,0,89,90,1,0,0,0,90,
+        92,1,0,0,0,91,93,5,9,0,0,92,91,1,0,0,0,92,93,1,0,0,0,93,95,1,0,0,
+        0,94,96,3,12,6,0,95,94,1,0,0,0,95,96,1,0,0,0,96,98,1,0,0,0,97,99,
+        5,9,0,0,98,97,1,0,0,0,98,99,1,0,0,0,99,101,1,0,0,0,100,102,3,38,
+        19,0,101,100,1,0,0,0,101,102,1,0,0,0,102,103,1,0,0,0,103,104,5,0,
+        0,1,104,1,1,0,0,0,105,106,5,12,0,0,106,107,5,9,0,0,107,111,5,10,
+        0,0,108,110,3,4,2,0,109,108,1,0,0,0,110,113,1,0,0,0,111,109,1,0,
+        0,0,111,112,1,0,0,0,112,114,1,0,0,0,113,111,1,0,0,0,114,115,5,11,
+        0,0,115,3,1,0,0,0,116,117,3,70,35,0,117,118,5,9,0,0,118,5,1,0,0,
+        0,119,120,5,15,0,0,120,121,3,64,32,0,121,7,1,0,0,0,122,123,5,14,
+        0,0,123,124,5,9,0,0,124,128,5,10,0,0,125,127,3,10,5,0,126,125,1,
+        0,0,0,127,130,1,0,0,0,128,126,1,0,0,0,128,129,1,0,0,0,129,131,1,
+        0,0,0,130,128,1,0,0,0,131,132,5,11,0,0,132,9,1,0,0,0,133,136,3,64,
+        32,0,134,135,5,16,0,0,135,137,3,64,32,0,136,134,1,0,0,0,136,137,
+        1,0,0,0,137,138,1,0,0,0,138,139,5,9,0,0,139,11,1,0,0,0,140,141,5,
+        13,0,0,141,142,5,9,0,0,142,143,5,10,0,0,143,144,3,18,9,0,144,145,
+        5,11,0,0,145,13,1,0,0,0,146,147,5,34,0,0,147,157,3,16,8,0,148,149,
+        5,35,0,0,149,157,3,16,8,0,150,151,5,36,0,0,151,157,3,16,8,0,152,
+        153,5,37,0,0,153,157,3,16,8,0,154,155,5,38,0,0,155,157,3,16,8,0,
+        156,146,1,0,0,0,156,148,1,0,0,0,156,150,1,0,0,0,156,152,1,0,0,0,
+        156,154,1,0,0,0,157,15,1,0,0,0,158,159,5,9,0,0,159,161,5,10,0,0,
+        160,162,3,18,9,0,161,160,1,0,0,0,162,163,1,0,0,0,163,161,1,0,0,0,
+        163,164,1,0,0,0,164,165,1,0,0,0,165,166,5,11,0,0,166,17,1,0,0,0,
+        167,169,3,68,34,0,168,167,1,0,0,0,168,169,1,0,0,0,169,170,1,0,0,
+        0,170,172,3,64,32,0,171,173,3,20,10,0,172,171,1,0,0,0,172,173,1,
+        0,0,0,173,175,1,0,0,0,174,176,3,22,11,0,175,174,1,0,0,0,175,176,
+        1,0,0,0,176,177,1,0,0,0,177,186,5,9,0,0,178,180,5,10,0,0,179,181,
+        3,14,7,0,180,179,1,0,0,0,181,182,1,0,0,0,182,180,1,0,0,0,182,183,
+        1,0,0,0,183,184,1,0,0,0,184,185,5,11,0,0,185,187,1,0,0,0,186,178,
+        1,0,0,0,186,187,1,0,0,0,187,19,1,0,0,0,188,189,5,19,0,0,189,190,
+        5,38,0,0,190,21,1,0,0,0,191,200,5,5,0,0,192,197,3,24,12,0,193,194,
+        5,57,0,0,194,196,3,24,12,0,195,193,1,0,0,0,196,199,1,0,0,0,197,195,
+        1,0,0,0,197,198,1,0,0,0,198,201,1,0,0,0,199,197,1,0,0,0,200,192,
+        1,0,0,0,200,201,1,0,0,0,201,202,1,0,0,0,202,203,5,6,0,0,203,23,1,
+        0,0,0,204,207,3,26,13,0,205,207,3,34,17,0,206,204,1,0,0,0,206,205,
+        1,0,0,0,207,25,1,0,0,0,208,210,3,28,14,0,209,211,3,30,15,0,210,209,
+        1,0,0,0,210,211,1,0,0,0,211,27,1,0,0,0,212,213,3,66,33,0,213,29,
+        1,0,0,0,214,222,5,56,0,0,215,222,5,54,0,0,216,222,5,55,0,0,217,222,
+        5,61,0,0,218,222,5,59,0,0,219,222,3,22,11,0,220,222,3,32,16,0,221,
+        214,1,0,0,0,221,215,1,0,0,0,221,216,1,0,0,0,221,217,1,0,0,0,221,
+        218,1,0,0,0,221,219,1,0,0,0,221,220,1,0,0,0,222,31,1,0,0,0,223,232,
+        5,3,0,0,224,229,3,30,15,0,225,226,5,57,0,0,226,228,3,30,15,0,227,
+        225,1,0,0,0,228,231,1,0,0,0,229,227,1,0,0,0,229,230,1,0,0,0,230,
+        233,1,0,0,0,231,229,1,0,0,0,232,224,1,0,0,0,232,233,1,0,0,0,233,
+        234,1,0,0,0,234,235,5,4,0,0,235,33,1,0,0,0,236,237,5,17,0,0,237,
+        241,3,42,21,0,238,239,5,18,0,0,239,241,3,36,18,0,240,236,1,0,0,0,
+        240,238,1,0,0,0,241,35,1,0,0,0,242,251,5,3,0,0,243,248,3,42,21,0,
+        244,245,5,57,0,0,245,247,3,42,21,0,246,244,1,0,0,0,247,250,1,0,0,
+        0,248,246,1,0,0,0,248,249,1,0,0,0,249,252,1,0,0,0,250,248,1,0,0,
+        0,251,243,1,0,0,0,251,252,1,0,0,0,252,253,1,0,0,0,253,254,5,4,0,
+        0,254,37,1,0,0,0,255,256,5,18,0,0,256,257,5,9,0,0,257,261,5,10,0,
+        0,258,260,3,40,20,0,259,258,1,0,0,0,260,263,1,0,0,0,261,259,1,0,
+        0,0,261,262,1,0,0,0,262,264,1,0,0,0,263,261,1,0,0,0,264,265,5,11,
+        0,0,265,39,1,0,0,0,266,267,3,42,21,0,267,268,5,9,0,0,268,41,1,0,
+        0,0,269,270,6,21,-1,0,270,279,3,44,22,0,271,279,3,64,32,0,272,273,
+        5,1,0,0,273,274,3,42,21,0,274,275,5,2,0,0,275,279,1,0,0,0,276,277,
+        5,39,0,0,277,279,3,42,21,5,278,269,1,0,0,0,278,271,1,0,0,0,278,272,
+        1,0,0,0,278,276,1,0,0,0,279,294,1,0,0,0,280,281,10,4,0,0,281,282,
+        5,40,0,0,282,293,3,42,21,5,283,284,10,3,0,0,284,285,5,41,0,0,285,
+        293,3,42,21,4,286,287,10,2,0,0,287,288,5,43,0,0,288,293,3,42,21,
+        3,289,290,10,1,0,0,290,291,5,42,0,0,291,293,3,42,21,2,292,280,1,
+        0,0,0,292,283,1,0,0,0,292,286,1,0,0,0,292,289,1,0,0,0,293,296,1,
+        0,0,0,294,292,1,0,0,0,294,295,1,0,0,0,295,43,1,0,0,0,296,294,1,0,
+        0,0,297,298,3,46,23,0,298,299,5,44,0,0,299,300,3,46,23,0,300,322,
+        1,0,0,0,301,302,3,46,23,0,302,303,5,45,0,0,303,304,3,46,23,0,304,
+        322,1,0,0,0,305,306,3,46,23,0,306,307,5,47,0,0,307,308,3,46,23,0,
+        308,322,1,0,0,0,309,310,3,46,23,0,310,311,5,46,0,0,311,312,3,46,
+        23,0,312,322,1,0,0,0,313,314,3,46,23,0,314,315,5,48,0,0,315,316,
+        3,46,23,0,316,322,1,0,0,0,317,318,3,46,23,0,318,319,5,49,0,0,319,
+        320,3,46,23,0,320,322,1,0,0,0,321,297,1,0,0,0,321,301,1,0,0,0,321,
+        305,1,0,0,0,321,309,1,0,0,0,321,313,1,0,0,0,321,317,1,0,0,0,322,
+        45,1,0,0,0,323,324,3,48,24,0,324,47,1,0,0,0,325,326,6,24,-1,0,326,
+        327,3,50,25,0,327,336,1,0,0,0,328,329,10,3,0,0,329,330,5,52,0,0,
+        330,335,3,50,25,0,331,332,10,2,0,0,332,333,5,53,0,0,333,335,3,50,
+        25,0,334,328,1,0,0,0,334,331,1,0,0,0,335,338,1,0,0,0,336,334,1,0,
+        0,0,336,337,1,0,0,0,337,49,1,0,0,0,338,336,1,0,0,0,339,340,6,25,
+        -1,0,340,341,3,52,26,0,341,350,1,0,0,0,342,343,10,3,0,0,343,344,
+        5,51,0,0,344,349,3,52,26,0,345,346,10,2,0,0,346,347,5,50,0,0,347,
+        349,3,52,26,0,348,342,1,0,0,0,348,345,1,0,0,0,349,352,1,0,0,0,350,
+        348,1,0,0,0,350,351,1,0,0,0,351,51,1,0,0,0,352,350,1,0,0,0,353,363,
+        5,54,0,0,354,363,5,55,0,0,355,363,5,61,0,0,356,363,3,54,27,0,357,
+        363,3,64,32,0,358,359,5,1,0,0,359,360,3,46,23,0,360,361,5,2,0,0,
+        361,363,1,0,0,0,362,353,1,0,0,0,362,354,1,0,0,0,362,355,1,0,0,0,
+        362,356,1,0,0,0,362,357,1,0,0,0,362,358,1,0,0,0,363,53,1,0,0,0,364,
+        369,3,56,28,0,365,369,3,58,29,0,366,369,3,60,30,0,367,369,3,62,31,
+        0,368,364,1,0,0,0,368,365,1,0,0,0,368,366,1,0,0,0,368,367,1,0,0,
+        0,369,55,1,0,0,0,370,371,5,25,0,0,371,375,5,1,0,0,372,373,3,64,32,
+        0,373,374,5,57,0,0,374,376,1,0,0,0,375,372,1,0,0,0,375,376,1,0,0,
+        0,376,377,1,0,0,0,377,378,3,64,32,0,378,379,5,2,0,0,379,57,1,0,0,
+        0,380,381,5,26,0,0,381,385,5,1,0,0,382,383,3,64,32,0,383,384,5,57,
+        0,0,384,386,1,0,0,0,385,382,1,0,0,0,385,386,1,0,0,0,386,387,1,0,
+        0,0,387,388,3,64,32,0,388,389,5,2,0,0,389,59,1,0,0,0,390,391,5,24,
+        0,0,391,392,5,1,0,0,392,393,3,64,32,0,393,394,5,2,0,0,394,61,1,0,
+        0,0,395,396,5,27,0,0,396,397,5,1,0,0,397,398,3,64,32,0,398,399,5,
+        2,0,0,399,406,1,0,0,0,400,401,5,28,0,0,401,402,5,1,0,0,402,403,3,
+        64,32,0,403,404,5,2,0,0,404,406,1,0,0,0,405,395,1,0,0,0,405,400,
+        1,0,0,0,406,63,1,0,0,0,407,408,3,66,33,0,408,409,5,58,0,0,409,411,
+        1,0,0,0,410,407,1,0,0,0,411,414,1,0,0,0,412,410,1,0,0,0,412,413,
+        1,0,0,0,413,415,1,0,0,0,414,412,1,0,0,0,415,416,3,66,33,0,416,65,
+        1,0,0,0,417,418,7,0,0,0,418,67,1,0,0,0,419,420,7,1,0,0,420,69,1,
+        0,0,0,421,427,3,72,36,0,422,425,5,58,0,0,423,426,3,74,37,0,424,426,
+        5,51,0,0,425,423,1,0,0,0,425,424,1,0,0,0,426,428,1,0,0,0,427,422,
+        1,0,0,0,427,428,1,0,0,0,428,71,1,0,0,0,429,430,7,2,0,0,430,73,1,
+        0,0,0,431,432,7,3,0,0,432,75,1,0,0,0,46,77,80,83,86,89,92,95,98,
+        101,111,128,136,156,163,168,172,175,182,186,197,200,206,210,221,
+        229,232,240,248,251,261,278,292,294,321,334,336,348,350,362,368,
+        375,385,405,412,425,427
+    ]
+
+class uvl_python_parser ( Parser ):
+
+    grammarFileName = "uvl_python_parser.g4"
+
+    atn = ATNDeserializer().deserialize(serializedATN())
+
+    decisionsToDFA = [ DFA(ds, i) for i, ds in enumerate(atn.decisionToState) ]
+
+    sharedContextCache = PredictionContextCache()
+
+    literalNames = [ "<INVALID>", "'('", "')'", "'['", "']'", "'{'", "'}'", 
+                     "'/*'", "'*/'", "<INVALID>", "'<INDENT>'", "'<DEDENT>'", 
+                     "'include'", "'features'", "'imports'", "'namespace'", 
+                     "'as'", "'constraint'", "'constraints'", "'cardinality'", 
+                     "'String'", "'Boolean'", "'Integer'", "'Real'", "'len'", 
+                     "'sum'", "'avg'", "'floor'", "'ceil'", "'Arithmetic'", 
+                     "'group-cardinality'", "'feature-cardinality'", "'aggregate-function'", 
+                     "'string-constraints'", "'or'", "'alternative'", "'optional'", 
+                     "'mandatory'", "<INVALID>", "'!'", "'&'", "'|'", "'<=>'", 
+                     "'=>'", "'=='", "'<'", "'<='", "'>'", "'>='", "'!='", 
+                     "'/'", "'*'", "'+'", "'-'", "<INVALID>", "<INVALID>", 
+                     "<INVALID>", "','", "'.'" ]
+
+    symbolicNames = [ "<INVALID>", "OPEN_PAREN", "CLOSE_PAREN", "OPEN_BRACK", 
+                      "CLOSE_BRACK", "OPEN_BRACE", "CLOSE_BRACE", "OPEN_COMMENT", 
+                      "CLOSE_COMMENT", "NEWLINE", "INDENT", "DEDENT", "INCLUDE_KEY", 
+                      "FEATURES_KEY", "IMPORTS_KEY", "NAMESPACE_KEY", "AS_KEY", 
+                      "CONSTRAINT_KEY", "CONSTRAINTS_KEY", "CARDINALITY_KEY", 
+                      "STRING_KEY", "BOOLEAN_KEY", "INTEGER_KEY", "REAL_KEY", 
+                      "LEN_KEY", "SUM_KEY", "AVG_KEY", "FLOOR_KEY", "CEIL_KEY", 
+                      "ARITHMETIC_KEY", "GROUP_CARDINALITY_KEY", "FEATURE_CARDINALITY_KEY", 
+                      "AGGREGATE_KEY", "STRING_CONSTRAINTS_KEY", "ORGROUP", 
+                      "ALTERNATIVE", "OPTIONAL", "MANDATORY", "CARDINALITY", 
+                      "NOT", "AND", "OR", "EQUIVALENCE", "IMPLICATION", 
+                      "EQUAL", "LOWER", "LOWER_EQUALS", "GREATER", "GREATER_EQUALS", 
+                      "NOT_EQUALS", "DIV", "MUL", "ADD", "SUB", "FLOAT", 
+                      "INTEGER", "BOOLEAN", "COMMA", "DOT", "ID_NOT_STRICT", 
+                      "ID_STRICT", "STRING", "SKIP_" ]
+
+    RULE_featureModel = 0
+    RULE_includes = 1
+    RULE_includeLine = 2
+    RULE_namespace = 3
+    RULE_imports = 4
+    RULE_importLine = 5
+    RULE_features = 6
+    RULE_group = 7
+    RULE_groupSpec = 8
+    RULE_feature = 9
+    RULE_featureCardinality = 10
+    RULE_attributes = 11
+    RULE_attribute = 12
+    RULE_valueAttribute = 13
+    RULE_key = 14
+    RULE_value = 15
+    RULE_vector = 16
+    RULE_constraintAttribute = 17
+    RULE_constraintList = 18
+    RULE_constraints = 19
+    RULE_constraintLine = 20
+    RULE_constraint = 21
+    RULE_equation = 22
+    RULE_expression = 23
+    RULE_additiveExpression = 24
+    RULE_multiplicativeExpression = 25
+    RULE_primaryExpression = 26
+    RULE_aggregateFunction = 27
+    RULE_sumAggregateFunction = 28
+    RULE_avgAggregateFunction = 29
+    RULE_stringAggregateFunction = 30
+    RULE_numericAggregateFunction = 31
+    RULE_reference = 32
+    RULE_id = 33
+    RULE_featureType = 34
+    RULE_languageLevel = 35
+    RULE_majorLevel = 36
+    RULE_minorLevel = 37
+
+    ruleNames =  [ "featureModel", "includes", "includeLine", "namespace", 
+                   "imports", "importLine", "features", "group", "groupSpec", 
+                   "feature", "featureCardinality", "attributes", "attribute", 
+                   "valueAttribute", "key", "value", "vector", "constraintAttribute", 
+                   "constraintList", "constraints", "constraintLine", "constraint", 
+                   "equation", "expression", "additiveExpression", "multiplicativeExpression", 
+                   "primaryExpression", "aggregateFunction", "sumAggregateFunction", 
+                   "avgAggregateFunction", "stringAggregateFunction", "numericAggregateFunction", 
+                   "reference", "id", "featureType", "languageLevel", "majorLevel", 
+                   "minorLevel" ]
+
+    EOF = Token.EOF
+    OPEN_PAREN=1
+    CLOSE_PAREN=2
+    OPEN_BRACK=3
+    CLOSE_BRACK=4
+    OPEN_BRACE=5
+    CLOSE_BRACE=6
+    OPEN_COMMENT=7
+    CLOSE_COMMENT=8
+    NEWLINE=9
+    INDENT=10
+    DEDENT=11
+    INCLUDE_KEY=12
+    FEATURES_KEY=13
+    IMPORTS_KEY=14
+    NAMESPACE_KEY=15
+    AS_KEY=16
+    CONSTRAINT_KEY=17
+    CONSTRAINTS_KEY=18
+    CARDINALITY_KEY=19
+    STRING_KEY=20
+    BOOLEAN_KEY=21
+    INTEGER_KEY=22
+    REAL_KEY=23
+    LEN_KEY=24
+    SUM_KEY=25
+    AVG_KEY=26
+    FLOOR_KEY=27
+    CEIL_KEY=28
+    ARITHMETIC_KEY=29
+    GROUP_CARDINALITY_KEY=30
+    FEATURE_CARDINALITY_KEY=31
+    AGGREGATE_KEY=32
+    STRING_CONSTRAINTS_KEY=33
+    ORGROUP=34
+    ALTERNATIVE=35
+    OPTIONAL=36
+    MANDATORY=37
+    CARDINALITY=38
+    NOT=39
+    AND=40
+    OR=41
+    EQUIVALENCE=42
+    IMPLICATION=43
+    EQUAL=44
+    LOWER=45
+    LOWER_EQUALS=46
+    GREATER=47
+    GREATER_EQUALS=48
+    NOT_EQUALS=49
+    DIV=50
+    MUL=51
+    ADD=52
+    SUB=53
+    FLOAT=54
+    INTEGER=55
+    BOOLEAN=56
+    COMMA=57
+    DOT=58
+    ID_NOT_STRICT=59
+    ID_STRICT=60
+    STRING=61
+    SKIP_=62
+
+    def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
+        super().__init__(input, output)
+        self.checkVersion("4.13.2")
+        self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
+        self._predicates = None
+
+
+
+
+    class FeatureModelContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def EOF(self):
+            return self.getToken(uvl_python_parser.EOF, 0)
+
+        def namespace(self):
+            return self.getTypedRuleContext(uvl_python_parser.NamespaceContext,0)
+
+
+        def NEWLINE(self, i:int=None):
+            if i is None:
+                return self.getTokens(uvl_python_parser.NEWLINE)
+            else:
+                return self.getToken(uvl_python_parser.NEWLINE, i)
+
+        def includes(self):
+            return self.getTypedRuleContext(uvl_python_parser.IncludesContext,0)
+
+
+        def imports(self):
+            return self.getTypedRuleContext(uvl_python_parser.ImportsContext,0)
+
+
+        def features(self):
+            return self.getTypedRuleContext(uvl_python_parser.FeaturesContext,0)
+
+
+        def constraints(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintsContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_featureModel
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFeatureModel" ):
+                listener.enterFeatureModel(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFeatureModel" ):
+                listener.exitFeatureModel(self)
+
+
+
+
+    def featureModel(self):
+
+        localctx = uvl_python_parser.FeatureModelContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 0, self.RULE_featureModel)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 77
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==15:
+                self.state = 76
+                self.namespace()
+
+
+            self.state = 80
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,1,self._ctx)
+            if la_ == 1:
+                self.state = 79
+                self.match(uvl_python_parser.NEWLINE)
+
+
+            self.state = 83
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==12:
+                self.state = 82
+                self.includes()
+
+
+            self.state = 86
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,3,self._ctx)
+            if la_ == 1:
+                self.state = 85
+                self.match(uvl_python_parser.NEWLINE)
+
+
+            self.state = 89
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==14:
+                self.state = 88
+                self.imports()
+
+
+            self.state = 92
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,5,self._ctx)
+            if la_ == 1:
+                self.state = 91
+                self.match(uvl_python_parser.NEWLINE)
+
+
+            self.state = 95
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==13:
+                self.state = 94
+                self.features()
+
+
+            self.state = 98
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==9:
+                self.state = 97
+                self.match(uvl_python_parser.NEWLINE)
+
+
+            self.state = 101
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==18:
+                self.state = 100
+                self.constraints()
+
+
+            self.state = 103
+            self.match(uvl_python_parser.EOF)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class IncludesContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def INCLUDE_KEY(self):
+            return self.getToken(uvl_python_parser.INCLUDE_KEY, 0)
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def includeLine(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.IncludeLineContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.IncludeLineContext,i)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_includes
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterIncludes" ):
+                listener.enterIncludes(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitIncludes" ):
+                listener.exitIncludes(self)
+
+
+
+
+    def includes(self):
+
+        localctx = uvl_python_parser.IncludesContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 2, self.RULE_includes)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 105
+            self.match(uvl_python_parser.INCLUDE_KEY)
+            self.state = 106
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 107
+            self.match(uvl_python_parser.INDENT)
+            self.state = 111
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            while _la==21 or _la==29:
+                self.state = 108
+                self.includeLine()
+                self.state = 113
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+
+            self.state = 114
+            self.match(uvl_python_parser.DEDENT)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class IncludeLineContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def languageLevel(self):
+            return self.getTypedRuleContext(uvl_python_parser.LanguageLevelContext,0)
+
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_includeLine
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterIncludeLine" ):
+                listener.enterIncludeLine(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitIncludeLine" ):
+                listener.exitIncludeLine(self)
+
+
+
+
+    def includeLine(self):
+
+        localctx = uvl_python_parser.IncludeLineContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 4, self.RULE_includeLine)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 116
+            self.languageLevel()
+            self.state = 117
+            self.match(uvl_python_parser.NEWLINE)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class NamespaceContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def NAMESPACE_KEY(self):
+            return self.getToken(uvl_python_parser.NAMESPACE_KEY, 0)
+
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_namespace
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterNamespace" ):
+                listener.enterNamespace(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitNamespace" ):
+                listener.exitNamespace(self)
+
+
+
+
+    def namespace(self):
+
+        localctx = uvl_python_parser.NamespaceContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 6, self.RULE_namespace)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 119
+            self.match(uvl_python_parser.NAMESPACE_KEY)
+            self.state = 120
+            self.reference()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ImportsContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def IMPORTS_KEY(self):
+            return self.getToken(uvl_python_parser.IMPORTS_KEY, 0)
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def importLine(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ImportLineContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ImportLineContext,i)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_imports
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterImports" ):
+                listener.enterImports(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitImports" ):
+                listener.exitImports(self)
+
+
+
+
+    def imports(self):
+
+        localctx = uvl_python_parser.ImportsContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 8, self.RULE_imports)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 122
+            self.match(uvl_python_parser.IMPORTS_KEY)
+            self.state = 123
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 124
+            self.match(uvl_python_parser.INDENT)
+            self.state = 128
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            while _la==59 or _la==60:
+                self.state = 125
+                self.importLine()
+                self.state = 130
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+
+            self.state = 131
+            self.match(uvl_python_parser.DEDENT)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ImportLineContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+            self.ns = None # ReferenceContext
+            self.alias = None # ReferenceContext
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def reference(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ReferenceContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,i)
+
+
+        def AS_KEY(self):
+            return self.getToken(uvl_python_parser.AS_KEY, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_importLine
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterImportLine" ):
+                listener.enterImportLine(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitImportLine" ):
+                listener.exitImportLine(self)
+
+
+
+
+    def importLine(self):
+
+        localctx = uvl_python_parser.ImportLineContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 10, self.RULE_importLine)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 133
+            localctx.ns = self.reference()
+            self.state = 136
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==16:
+                self.state = 134
+                self.match(uvl_python_parser.AS_KEY)
+                self.state = 135
+                localctx.alias = self.reference()
+
+
+            self.state = 138
+            self.match(uvl_python_parser.NEWLINE)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class FeaturesContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def FEATURES_KEY(self):
+            return self.getToken(uvl_python_parser.FEATURES_KEY, 0)
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def feature(self):
+            return self.getTypedRuleContext(uvl_python_parser.FeatureContext,0)
+
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_features
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFeatures" ):
+                listener.enterFeatures(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFeatures" ):
+                listener.exitFeatures(self)
+
+
+
+
+    def features(self):
+
+        localctx = uvl_python_parser.FeaturesContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 12, self.RULE_features)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 140
+            self.match(uvl_python_parser.FEATURES_KEY)
+            self.state = 141
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 142
+            self.match(uvl_python_parser.INDENT)
+            self.state = 143
+            self.feature()
+            self.state = 144
+            self.match(uvl_python_parser.DEDENT)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class GroupContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_group
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class AlternativeGroupContext(GroupContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.GroupContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def ALTERNATIVE(self):
+            return self.getToken(uvl_python_parser.ALTERNATIVE, 0)
+        def groupSpec(self):
+            return self.getTypedRuleContext(uvl_python_parser.GroupSpecContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAlternativeGroup" ):
+                listener.enterAlternativeGroup(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAlternativeGroup" ):
+                listener.exitAlternativeGroup(self)
+
+
+    class OptionalGroupContext(GroupContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.GroupContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def OPTIONAL(self):
+            return self.getToken(uvl_python_parser.OPTIONAL, 0)
+        def groupSpec(self):
+            return self.getTypedRuleContext(uvl_python_parser.GroupSpecContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterOptionalGroup" ):
+                listener.enterOptionalGroup(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitOptionalGroup" ):
+                listener.exitOptionalGroup(self)
+
+
+    class MandatoryGroupContext(GroupContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.GroupContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def MANDATORY(self):
+            return self.getToken(uvl_python_parser.MANDATORY, 0)
+        def groupSpec(self):
+            return self.getTypedRuleContext(uvl_python_parser.GroupSpecContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterMandatoryGroup" ):
+                listener.enterMandatoryGroup(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitMandatoryGroup" ):
+                listener.exitMandatoryGroup(self)
+
+
+    class CardinalityGroupContext(GroupContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.GroupContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def CARDINALITY(self):
+            return self.getToken(uvl_python_parser.CARDINALITY, 0)
+        def groupSpec(self):
+            return self.getTypedRuleContext(uvl_python_parser.GroupSpecContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterCardinalityGroup" ):
+                listener.enterCardinalityGroup(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitCardinalityGroup" ):
+                listener.exitCardinalityGroup(self)
+
+
+    class OrGroupContext(GroupContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.GroupContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def ORGROUP(self):
+            return self.getToken(uvl_python_parser.ORGROUP, 0)
+        def groupSpec(self):
+            return self.getTypedRuleContext(uvl_python_parser.GroupSpecContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterOrGroup" ):
+                listener.enterOrGroup(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitOrGroup" ):
+                listener.exitOrGroup(self)
+
+
+
+    def group(self):
+
+        localctx = uvl_python_parser.GroupContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 14, self.RULE_group)
+        try:
+            self.state = 156
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [34]:
+                localctx = uvl_python_parser.OrGroupContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 146
+                self.match(uvl_python_parser.ORGROUP)
+                self.state = 147
+                self.groupSpec()
+                pass
+            elif token in [35]:
+                localctx = uvl_python_parser.AlternativeGroupContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 148
+                self.match(uvl_python_parser.ALTERNATIVE)
+                self.state = 149
+                self.groupSpec()
+                pass
+            elif token in [36]:
+                localctx = uvl_python_parser.OptionalGroupContext(self, localctx)
+                self.enterOuterAlt(localctx, 3)
+                self.state = 150
+                self.match(uvl_python_parser.OPTIONAL)
+                self.state = 151
+                self.groupSpec()
+                pass
+            elif token in [37]:
+                localctx = uvl_python_parser.MandatoryGroupContext(self, localctx)
+                self.enterOuterAlt(localctx, 4)
+                self.state = 152
+                self.match(uvl_python_parser.MANDATORY)
+                self.state = 153
+                self.groupSpec()
+                pass
+            elif token in [38]:
+                localctx = uvl_python_parser.CardinalityGroupContext(self, localctx)
+                self.enterOuterAlt(localctx, 5)
+                self.state = 154
+                self.match(uvl_python_parser.CARDINALITY)
+                self.state = 155
+                self.groupSpec()
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class GroupSpecContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def feature(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.FeatureContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.FeatureContext,i)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_groupSpec
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterGroupSpec" ):
+                listener.enterGroupSpec(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitGroupSpec" ):
+                listener.exitGroupSpec(self)
+
+
+
+
+    def groupSpec(self):
+
+        localctx = uvl_python_parser.GroupSpecContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 16, self.RULE_groupSpec)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 158
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 159
+            self.match(uvl_python_parser.INDENT)
+            self.state = 161 
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            while True:
+                self.state = 160
+                self.feature()
+                self.state = 163 
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+                if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & 1729382256925999104) != 0)):
+                    break
+
+            self.state = 165
+            self.match(uvl_python_parser.DEDENT)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class FeatureContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def featureType(self):
+            return self.getTypedRuleContext(uvl_python_parser.FeatureTypeContext,0)
+
+
+        def featureCardinality(self):
+            return self.getTypedRuleContext(uvl_python_parser.FeatureCardinalityContext,0)
+
+
+        def attributes(self):
+            return self.getTypedRuleContext(uvl_python_parser.AttributesContext,0)
+
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def group(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.GroupContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.GroupContext,i)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_feature
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFeature" ):
+                listener.enterFeature(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFeature" ):
+                listener.exitFeature(self)
+
+
+
+
+    def feature(self):
+
+        localctx = uvl_python_parser.FeatureContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 18, self.RULE_feature)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 168
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 15728640) != 0):
+                self.state = 167
+                self.featureType()
+
+
+            self.state = 170
+            self.reference()
+            self.state = 172
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==19:
+                self.state = 171
+                self.featureCardinality()
+
+
+            self.state = 175
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==5:
+                self.state = 174
+                self.attributes()
+
+
+            self.state = 177
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 186
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==10:
+                self.state = 178
+                self.match(uvl_python_parser.INDENT)
+                self.state = 180 
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+                while True:
+                    self.state = 179
+                    self.group()
+                    self.state = 182 
+                    self._errHandler.sync(self)
+                    _la = self._input.LA(1)
+                    if not ((((_la) & ~0x3f) == 0 and ((1 << _la) & 532575944704) != 0)):
+                        break
+
+                self.state = 184
+                self.match(uvl_python_parser.DEDENT)
+
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class FeatureCardinalityContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def CARDINALITY_KEY(self):
+            return self.getToken(uvl_python_parser.CARDINALITY_KEY, 0)
+
+        def CARDINALITY(self):
+            return self.getToken(uvl_python_parser.CARDINALITY, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_featureCardinality
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFeatureCardinality" ):
+                listener.enterFeatureCardinality(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFeatureCardinality" ):
+                listener.exitFeatureCardinality(self)
+
+
+
+
+    def featureCardinality(self):
+
+        localctx = uvl_python_parser.FeatureCardinalityContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 20, self.RULE_featureCardinality)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 188
+            self.match(uvl_python_parser.CARDINALITY_KEY)
+            self.state = 189
+            self.match(uvl_python_parser.CARDINALITY)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class AttributesContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def OPEN_BRACE(self):
+            return self.getToken(uvl_python_parser.OPEN_BRACE, 0)
+
+        def CLOSE_BRACE(self):
+            return self.getToken(uvl_python_parser.CLOSE_BRACE, 0)
+
+        def attribute(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.AttributeContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.AttributeContext,i)
+
+
+        def COMMA(self, i:int=None):
+            if i is None:
+                return self.getTokens(uvl_python_parser.COMMA)
+            else:
+                return self.getToken(uvl_python_parser.COMMA, i)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_attributes
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAttributes" ):
+                listener.enterAttributes(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAttributes" ):
+                listener.exitAttributes(self)
+
+
+
+
+    def attributes(self):
+
+        localctx = uvl_python_parser.AttributesContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 22, self.RULE_attributes)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 191
+            self.match(uvl_python_parser.OPEN_BRACE)
+            self.state = 200
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 1729382256910663680) != 0):
+                self.state = 192
+                self.attribute()
+                self.state = 197
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+                while _la==57:
+                    self.state = 193
+                    self.match(uvl_python_parser.COMMA)
+                    self.state = 194
+                    self.attribute()
+                    self.state = 199
+                    self._errHandler.sync(self)
+                    _la = self._input.LA(1)
+
+
+
+            self.state = 202
+            self.match(uvl_python_parser.CLOSE_BRACE)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class AttributeContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def valueAttribute(self):
+            return self.getTypedRuleContext(uvl_python_parser.ValueAttributeContext,0)
+
+
+        def constraintAttribute(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintAttributeContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_attribute
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAttribute" ):
+                listener.enterAttribute(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAttribute" ):
+                listener.exitAttribute(self)
+
+
+
+
+    def attribute(self):
+
+        localctx = uvl_python_parser.AttributeContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 24, self.RULE_attribute)
+        try:
+            self.state = 206
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [59, 60]:
+                self.enterOuterAlt(localctx, 1)
+                self.state = 204
+                self.valueAttribute()
+                pass
+            elif token in [17, 18]:
+                self.enterOuterAlt(localctx, 2)
+                self.state = 205
+                self.constraintAttribute()
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ValueAttributeContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def key(self):
+            return self.getTypedRuleContext(uvl_python_parser.KeyContext,0)
+
+
+        def value(self):
+            return self.getTypedRuleContext(uvl_python_parser.ValueContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_valueAttribute
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterValueAttribute" ):
+                listener.enterValueAttribute(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitValueAttribute" ):
+                listener.exitValueAttribute(self)
+
+
+
+
+    def valueAttribute(self):
+
+        localctx = uvl_python_parser.ValueAttributeContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 26, self.RULE_valueAttribute)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 208
+            self.key()
+            self.state = 210
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 3008404551083491368) != 0):
+                self.state = 209
+                self.value()
+
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class KeyContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def id_(self):
+            return self.getTypedRuleContext(uvl_python_parser.IdContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_key
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterKey" ):
+                listener.enterKey(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitKey" ):
+                listener.exitKey(self)
+
+
+
+
+    def key(self):
+
+        localctx = uvl_python_parser.KeyContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 28, self.RULE_key)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 212
+            self.id_()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ValueContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def BOOLEAN(self):
+            return self.getToken(uvl_python_parser.BOOLEAN, 0)
+
+        def FLOAT(self):
+            return self.getToken(uvl_python_parser.FLOAT, 0)
+
+        def INTEGER(self):
+            return self.getToken(uvl_python_parser.INTEGER, 0)
+
+        def STRING(self):
+            return self.getToken(uvl_python_parser.STRING, 0)
+
+        def ID_NOT_STRICT(self):
+            return self.getToken(uvl_python_parser.ID_NOT_STRICT, 0)
+
+        def attributes(self):
+            return self.getTypedRuleContext(uvl_python_parser.AttributesContext,0)
+
+
+        def vector(self):
+            return self.getTypedRuleContext(uvl_python_parser.VectorContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_value
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterValue" ):
+                listener.enterValue(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitValue" ):
+                listener.exitValue(self)
+
+
+
+
+    def value(self):
+
+        localctx = uvl_python_parser.ValueContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 30, self.RULE_value)
+        try:
+            self.state = 221
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [56]:
+                self.enterOuterAlt(localctx, 1)
+                self.state = 214
+                self.match(uvl_python_parser.BOOLEAN)
+                pass
+            elif token in [54]:
+                self.enterOuterAlt(localctx, 2)
+                self.state = 215
+                self.match(uvl_python_parser.FLOAT)
+                pass
+            elif token in [55]:
+                self.enterOuterAlt(localctx, 3)
+                self.state = 216
+                self.match(uvl_python_parser.INTEGER)
+                pass
+            elif token in [61]:
+                self.enterOuterAlt(localctx, 4)
+                self.state = 217
+                self.match(uvl_python_parser.STRING)
+                pass
+            elif token in [59]:
+                self.enterOuterAlt(localctx, 5)
+                self.state = 218
+                self.match(uvl_python_parser.ID_NOT_STRICT)
+                pass
+            elif token in [5]:
+                self.enterOuterAlt(localctx, 6)
+                self.state = 219
+                self.attributes()
+                pass
+            elif token in [3]:
+                self.enterOuterAlt(localctx, 7)
+                self.state = 220
+                self.vector()
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class VectorContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def OPEN_BRACK(self):
+            return self.getToken(uvl_python_parser.OPEN_BRACK, 0)
+
+        def CLOSE_BRACK(self):
+            return self.getToken(uvl_python_parser.CLOSE_BRACK, 0)
+
+        def value(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ValueContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ValueContext,i)
+
+
+        def COMMA(self, i:int=None):
+            if i is None:
+                return self.getTokens(uvl_python_parser.COMMA)
+            else:
+                return self.getToken(uvl_python_parser.COMMA, i)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_vector
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterVector" ):
+                listener.enterVector(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitVector" ):
+                listener.exitVector(self)
+
+
+
+
+    def vector(self):
+
+        localctx = uvl_python_parser.VectorContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 32, self.RULE_vector)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 223
+            self.match(uvl_python_parser.OPEN_BRACK)
+            self.state = 232
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 3008404551083491368) != 0):
+                self.state = 224
+                self.value()
+                self.state = 229
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+                while _la==57:
+                    self.state = 225
+                    self.match(uvl_python_parser.COMMA)
+                    self.state = 226
+                    self.value()
+                    self.state = 231
+                    self._errHandler.sync(self)
+                    _la = self._input.LA(1)
+
+
+
+            self.state = 234
+            self.match(uvl_python_parser.CLOSE_BRACK)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ConstraintAttributeContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_constraintAttribute
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class ListConstraintAttributeContext(ConstraintAttributeContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintAttributeContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def CONSTRAINTS_KEY(self):
+            return self.getToken(uvl_python_parser.CONSTRAINTS_KEY, 0)
+        def constraintList(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintListContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterListConstraintAttribute" ):
+                listener.enterListConstraintAttribute(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitListConstraintAttribute" ):
+                listener.exitListConstraintAttribute(self)
+
+
+    class SingleConstraintAttributeContext(ConstraintAttributeContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintAttributeContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def CONSTRAINT_KEY(self):
+            return self.getToken(uvl_python_parser.CONSTRAINT_KEY, 0)
+        def constraint(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterSingleConstraintAttribute" ):
+                listener.enterSingleConstraintAttribute(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitSingleConstraintAttribute" ):
+                listener.exitSingleConstraintAttribute(self)
+
+
+
+    def constraintAttribute(self):
+
+        localctx = uvl_python_parser.ConstraintAttributeContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 34, self.RULE_constraintAttribute)
+        try:
+            self.state = 240
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [17]:
+                localctx = uvl_python_parser.SingleConstraintAttributeContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 236
+                self.match(uvl_python_parser.CONSTRAINT_KEY)
+                self.state = 237
+                self.constraint(0)
+                pass
+            elif token in [18]:
+                localctx = uvl_python_parser.ListConstraintAttributeContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 238
+                self.match(uvl_python_parser.CONSTRAINTS_KEY)
+                self.state = 239
+                self.constraintList()
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ConstraintListContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def OPEN_BRACK(self):
+            return self.getToken(uvl_python_parser.OPEN_BRACK, 0)
+
+        def CLOSE_BRACK(self):
+            return self.getToken(uvl_python_parser.CLOSE_BRACK, 0)
+
+        def constraint(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,i)
+
+
+        def COMMA(self, i:int=None):
+            if i is None:
+                return self.getTokens(uvl_python_parser.COMMA)
+            else:
+                return self.getToken(uvl_python_parser.COMMA, i)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_constraintList
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterConstraintList" ):
+                listener.enterConstraintList(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitConstraintList" ):
+                listener.exitConstraintList(self)
+
+
+
+
+    def constraintList(self):
+
+        localctx = uvl_python_parser.ConstraintListContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 36, self.RULE_constraintList)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 242
+            self.match(uvl_python_parser.OPEN_BRACK)
+            self.state = 251
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & 4089269011928317954) != 0):
+                self.state = 243
+                self.constraint(0)
+                self.state = 248
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+                while _la==57:
+                    self.state = 244
+                    self.match(uvl_python_parser.COMMA)
+                    self.state = 245
+                    self.constraint(0)
+                    self.state = 250
+                    self._errHandler.sync(self)
+                    _la = self._input.LA(1)
+
+
+
+            self.state = 253
+            self.match(uvl_python_parser.CLOSE_BRACK)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ConstraintsContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def CONSTRAINTS_KEY(self):
+            return self.getToken(uvl_python_parser.CONSTRAINTS_KEY, 0)
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def INDENT(self):
+            return self.getToken(uvl_python_parser.INDENT, 0)
+
+        def DEDENT(self):
+            return self.getToken(uvl_python_parser.DEDENT, 0)
+
+        def constraintLine(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintLineContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintLineContext,i)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_constraints
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterConstraints" ):
+                listener.enterConstraints(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitConstraints" ):
+                listener.exitConstraints(self)
+
+
+
+
+    def constraints(self):
+
+        localctx = uvl_python_parser.ConstraintsContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 38, self.RULE_constraints)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 255
+            self.match(uvl_python_parser.CONSTRAINTS_KEY)
+            self.state = 256
+            self.match(uvl_python_parser.NEWLINE)
+            self.state = 257
+            self.match(uvl_python_parser.INDENT)
+            self.state = 261
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            while (((_la) & ~0x3f) == 0 and ((1 << _la) & 4089269011928317954) != 0):
+                self.state = 258
+                self.constraintLine()
+                self.state = 263
+                self._errHandler.sync(self)
+                _la = self._input.LA(1)
+
+            self.state = 264
+            self.match(uvl_python_parser.DEDENT)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ConstraintLineContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def constraint(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,0)
+
+
+        def NEWLINE(self):
+            return self.getToken(uvl_python_parser.NEWLINE, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_constraintLine
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterConstraintLine" ):
+                listener.enterConstraintLine(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitConstraintLine" ):
+                listener.exitConstraintLine(self)
+
+
+
+
+    def constraintLine(self):
+
+        localctx = uvl_python_parser.ConstraintLineContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 40, self.RULE_constraintLine)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 266
+            self.constraint(0)
+            self.state = 267
+            self.match(uvl_python_parser.NEWLINE)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ConstraintContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_constraint
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+    class OrConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def constraint(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,i)
+
+        def OR(self):
+            return self.getToken(uvl_python_parser.OR, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterOrConstraint" ):
+                listener.enterOrConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitOrConstraint" ):
+                listener.exitOrConstraint(self)
+
+
+    class EquationConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def equation(self):
+            return self.getTypedRuleContext(uvl_python_parser.EquationContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterEquationConstraint" ):
+                listener.enterEquationConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitEquationConstraint" ):
+                listener.exitEquationConstraint(self)
+
+
+    class LiteralConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLiteralConstraint" ):
+                listener.enterLiteralConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLiteralConstraint" ):
+                listener.exitLiteralConstraint(self)
+
+
+    class ParenthesisConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+        def constraint(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,0)
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterParenthesisConstraint" ):
+                listener.enterParenthesisConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitParenthesisConstraint" ):
+                listener.exitParenthesisConstraint(self)
+
+
+    class NotConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def NOT(self):
+            return self.getToken(uvl_python_parser.NOT, 0)
+        def constraint(self):
+            return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterNotConstraint" ):
+                listener.enterNotConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitNotConstraint" ):
+                listener.exitNotConstraint(self)
+
+
+    class AndConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def constraint(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,i)
+
+        def AND(self):
+            return self.getToken(uvl_python_parser.AND, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAndConstraint" ):
+                listener.enterAndConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAndConstraint" ):
+                listener.exitAndConstraint(self)
+
+
+    class EquivalenceConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def constraint(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,i)
+
+        def EQUIVALENCE(self):
+            return self.getToken(uvl_python_parser.EQUIVALENCE, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterEquivalenceConstraint" ):
+                listener.enterEquivalenceConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitEquivalenceConstraint" ):
+                listener.exitEquivalenceConstraint(self)
+
+
+    class ImplicationConstraintContext(ConstraintContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.ConstraintContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def constraint(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ConstraintContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ConstraintContext,i)
+
+        def IMPLICATION(self):
+            return self.getToken(uvl_python_parser.IMPLICATION, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterImplicationConstraint" ):
+                listener.enterImplicationConstraint(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitImplicationConstraint" ):
+                listener.exitImplicationConstraint(self)
+
+
+
+    def constraint(self, _p:int=0):
+        _parentctx = self._ctx
+        _parentState = self.state
+        localctx = uvl_python_parser.ConstraintContext(self, self._ctx, _parentState)
+        _prevctx = localctx
+        _startState = 42
+        self.enterRecursionRule(localctx, 42, self.RULE_constraint, _p)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 278
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,30,self._ctx)
+            if la_ == 1:
+                localctx = uvl_python_parser.EquationConstraintContext(self, localctx)
+                self._ctx = localctx
+                _prevctx = localctx
+
+                self.state = 270
+                self.equation()
+                pass
+
+            elif la_ == 2:
+                localctx = uvl_python_parser.LiteralConstraintContext(self, localctx)
+                self._ctx = localctx
+                _prevctx = localctx
+                self.state = 271
+                self.reference()
+                pass
+
+            elif la_ == 3:
+                localctx = uvl_python_parser.ParenthesisConstraintContext(self, localctx)
+                self._ctx = localctx
+                _prevctx = localctx
+                self.state = 272
+                self.match(uvl_python_parser.OPEN_PAREN)
+                self.state = 273
+                self.constraint(0)
+                self.state = 274
+                self.match(uvl_python_parser.CLOSE_PAREN)
+                pass
+
+            elif la_ == 4:
+                localctx = uvl_python_parser.NotConstraintContext(self, localctx)
+                self._ctx = localctx
+                _prevctx = localctx
+                self.state = 276
+                self.match(uvl_python_parser.NOT)
+                self.state = 277
+                self.constraint(5)
+                pass
+
+
+            self._ctx.stop = self._input.LT(-1)
+            self.state = 294
+            self._errHandler.sync(self)
+            _alt = self._interp.adaptivePredict(self._input,32,self._ctx)
+            while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
+                if _alt==1:
+                    if self._parseListeners is not None:
+                        self.triggerExitRuleEvent()
+                    _prevctx = localctx
+                    self.state = 292
+                    self._errHandler.sync(self)
+                    la_ = self._interp.adaptivePredict(self._input,31,self._ctx)
+                    if la_ == 1:
+                        localctx = uvl_python_parser.AndConstraintContext(self, uvl_python_parser.ConstraintContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_constraint)
+                        self.state = 280
+                        if not self.precpred(self._ctx, 4):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 4)")
+                        self.state = 281
+                        self.match(uvl_python_parser.AND)
+                        self.state = 282
+                        self.constraint(5)
+                        pass
+
+                    elif la_ == 2:
+                        localctx = uvl_python_parser.OrConstraintContext(self, uvl_python_parser.ConstraintContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_constraint)
+                        self.state = 283
+                        if not self.precpred(self._ctx, 3):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 3)")
+                        self.state = 284
+                        self.match(uvl_python_parser.OR)
+                        self.state = 285
+                        self.constraint(4)
+                        pass
+
+                    elif la_ == 3:
+                        localctx = uvl_python_parser.ImplicationConstraintContext(self, uvl_python_parser.ConstraintContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_constraint)
+                        self.state = 286
+                        if not self.precpred(self._ctx, 2):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 2)")
+                        self.state = 287
+                        self.match(uvl_python_parser.IMPLICATION)
+                        self.state = 288
+                        self.constraint(3)
+                        pass
+
+                    elif la_ == 4:
+                        localctx = uvl_python_parser.EquivalenceConstraintContext(self, uvl_python_parser.ConstraintContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_constraint)
+                        self.state = 289
+                        if not self.precpred(self._ctx, 1):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 1)")
+                        self.state = 290
+                        self.match(uvl_python_parser.EQUIVALENCE)
+                        self.state = 291
+                        self.constraint(2)
+                        pass
+
+             
+                self.state = 296
+                self._errHandler.sync(self)
+                _alt = self._interp.adaptivePredict(self._input,32,self._ctx)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.unrollRecursionContexts(_parentctx)
+        return localctx
+
+
+    class EquationContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_equation
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class EqualEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def EQUAL(self):
+            return self.getToken(uvl_python_parser.EQUAL, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterEqualEquation" ):
+                listener.enterEqualEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitEqualEquation" ):
+                listener.exitEqualEquation(self)
+
+
+    class LowerEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def LOWER(self):
+            return self.getToken(uvl_python_parser.LOWER, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLowerEquation" ):
+                listener.enterLowerEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLowerEquation" ):
+                listener.exitLowerEquation(self)
+
+
+    class LowerEqualsEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def LOWER_EQUALS(self):
+            return self.getToken(uvl_python_parser.LOWER_EQUALS, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLowerEqualsEquation" ):
+                listener.enterLowerEqualsEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLowerEqualsEquation" ):
+                listener.exitLowerEqualsEquation(self)
+
+
+    class GreaterEqualsEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def GREATER_EQUALS(self):
+            return self.getToken(uvl_python_parser.GREATER_EQUALS, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterGreaterEqualsEquation" ):
+                listener.enterGreaterEqualsEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitGreaterEqualsEquation" ):
+                listener.exitGreaterEqualsEquation(self)
+
+
+    class GreaterEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def GREATER(self):
+            return self.getToken(uvl_python_parser.GREATER, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterGreaterEquation" ):
+                listener.enterGreaterEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitGreaterEquation" ):
+                listener.exitGreaterEquation(self)
+
+
+    class NotEqualsEquationContext(EquationContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.EquationContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def expression(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ExpressionContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,i)
+
+        def NOT_EQUALS(self):
+            return self.getToken(uvl_python_parser.NOT_EQUALS, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterNotEqualsEquation" ):
+                listener.enterNotEqualsEquation(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitNotEqualsEquation" ):
+                listener.exitNotEqualsEquation(self)
+
+
+
+    def equation(self):
+
+        localctx = uvl_python_parser.EquationContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 44, self.RULE_equation)
+        try:
+            self.state = 321
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,33,self._ctx)
+            if la_ == 1:
+                localctx = uvl_python_parser.EqualEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 297
+                self.expression()
+                self.state = 298
+                self.match(uvl_python_parser.EQUAL)
+                self.state = 299
+                self.expression()
+                pass
+
+            elif la_ == 2:
+                localctx = uvl_python_parser.LowerEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 301
+                self.expression()
+                self.state = 302
+                self.match(uvl_python_parser.LOWER)
+                self.state = 303
+                self.expression()
+                pass
+
+            elif la_ == 3:
+                localctx = uvl_python_parser.GreaterEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 3)
+                self.state = 305
+                self.expression()
+                self.state = 306
+                self.match(uvl_python_parser.GREATER)
+                self.state = 307
+                self.expression()
+                pass
+
+            elif la_ == 4:
+                localctx = uvl_python_parser.LowerEqualsEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 4)
+                self.state = 309
+                self.expression()
+                self.state = 310
+                self.match(uvl_python_parser.LOWER_EQUALS)
+                self.state = 311
+                self.expression()
+                pass
+
+            elif la_ == 5:
+                localctx = uvl_python_parser.GreaterEqualsEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 5)
+                self.state = 313
+                self.expression()
+                self.state = 314
+                self.match(uvl_python_parser.GREATER_EQUALS)
+                self.state = 315
+                self.expression()
+                pass
+
+            elif la_ == 6:
+                localctx = uvl_python_parser.NotEqualsEquationContext(self, localctx)
+                self.enterOuterAlt(localctx, 6)
+                self.state = 317
+                self.expression()
+                self.state = 318
+                self.match(uvl_python_parser.NOT_EQUALS)
+                self.state = 319
+                self.expression()
+                pass
+
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ExpressionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def additiveExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.AdditiveExpressionContext,0)
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_expression
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterExpression" ):
+                listener.enterExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitExpression" ):
+                listener.exitExpression(self)
+
+
+
+
+    def expression(self):
+
+        localctx = uvl_python_parser.ExpressionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 46, self.RULE_expression)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 323
+            self.additiveExpression(0)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class AdditiveExpressionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_additiveExpression
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+    class MultiplicativeExprContext(AdditiveExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AdditiveExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def multiplicativeExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.MultiplicativeExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterMultiplicativeExpr" ):
+                listener.enterMultiplicativeExpr(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitMultiplicativeExpr" ):
+                listener.exitMultiplicativeExpr(self)
+
+
+    class AddExpressionContext(AdditiveExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AdditiveExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def additiveExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.AdditiveExpressionContext,0)
+
+        def ADD(self):
+            return self.getToken(uvl_python_parser.ADD, 0)
+        def multiplicativeExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.MultiplicativeExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAddExpression" ):
+                listener.enterAddExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAddExpression" ):
+                listener.exitAddExpression(self)
+
+
+    class SubExpressionContext(AdditiveExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AdditiveExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def additiveExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.AdditiveExpressionContext,0)
+
+        def SUB(self):
+            return self.getToken(uvl_python_parser.SUB, 0)
+        def multiplicativeExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.MultiplicativeExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterSubExpression" ):
+                listener.enterSubExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitSubExpression" ):
+                listener.exitSubExpression(self)
+
+
+
+    def additiveExpression(self, _p:int=0):
+        _parentctx = self._ctx
+        _parentState = self.state
+        localctx = uvl_python_parser.AdditiveExpressionContext(self, self._ctx, _parentState)
+        _prevctx = localctx
+        _startState = 48
+        self.enterRecursionRule(localctx, 48, self.RULE_additiveExpression, _p)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            localctx = uvl_python_parser.MultiplicativeExprContext(self, localctx)
+            self._ctx = localctx
+            _prevctx = localctx
+
+            self.state = 326
+            self.multiplicativeExpression(0)
+            self._ctx.stop = self._input.LT(-1)
+            self.state = 336
+            self._errHandler.sync(self)
+            _alt = self._interp.adaptivePredict(self._input,35,self._ctx)
+            while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
+                if _alt==1:
+                    if self._parseListeners is not None:
+                        self.triggerExitRuleEvent()
+                    _prevctx = localctx
+                    self.state = 334
+                    self._errHandler.sync(self)
+                    la_ = self._interp.adaptivePredict(self._input,34,self._ctx)
+                    if la_ == 1:
+                        localctx = uvl_python_parser.AddExpressionContext(self, uvl_python_parser.AdditiveExpressionContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_additiveExpression)
+                        self.state = 328
+                        if not self.precpred(self._ctx, 3):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 3)")
+                        self.state = 329
+                        self.match(uvl_python_parser.ADD)
+                        self.state = 330
+                        self.multiplicativeExpression(0)
+                        pass
+
+                    elif la_ == 2:
+                        localctx = uvl_python_parser.SubExpressionContext(self, uvl_python_parser.AdditiveExpressionContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_additiveExpression)
+                        self.state = 331
+                        if not self.precpred(self._ctx, 2):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 2)")
+                        self.state = 332
+                        self.match(uvl_python_parser.SUB)
+                        self.state = 333
+                        self.multiplicativeExpression(0)
+                        pass
+
+             
+                self.state = 338
+                self._errHandler.sync(self)
+                _alt = self._interp.adaptivePredict(self._input,35,self._ctx)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.unrollRecursionContexts(_parentctx)
+        return localctx
+
+
+    class MultiplicativeExpressionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_multiplicativeExpression
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+    class PrimaryExpressionExpressionContext(MultiplicativeExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.MultiplicativeExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def primaryExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.PrimaryExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterPrimaryExpressionExpression" ):
+                listener.enterPrimaryExpressionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitPrimaryExpressionExpression" ):
+                listener.exitPrimaryExpressionExpression(self)
+
+
+    class DivExpressionContext(MultiplicativeExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.MultiplicativeExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def multiplicativeExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.MultiplicativeExpressionContext,0)
+
+        def DIV(self):
+            return self.getToken(uvl_python_parser.DIV, 0)
+        def primaryExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.PrimaryExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterDivExpression" ):
+                listener.enterDivExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitDivExpression" ):
+                listener.exitDivExpression(self)
+
+
+    class MulExpressionContext(MultiplicativeExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.MultiplicativeExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def multiplicativeExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.MultiplicativeExpressionContext,0)
+
+        def MUL(self):
+            return self.getToken(uvl_python_parser.MUL, 0)
+        def primaryExpression(self):
+            return self.getTypedRuleContext(uvl_python_parser.PrimaryExpressionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterMulExpression" ):
+                listener.enterMulExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitMulExpression" ):
+                listener.exitMulExpression(self)
+
+
+
+    def multiplicativeExpression(self, _p:int=0):
+        _parentctx = self._ctx
+        _parentState = self.state
+        localctx = uvl_python_parser.MultiplicativeExpressionContext(self, self._ctx, _parentState)
+        _prevctx = localctx
+        _startState = 50
+        self.enterRecursionRule(localctx, 50, self.RULE_multiplicativeExpression, _p)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            localctx = uvl_python_parser.PrimaryExpressionExpressionContext(self, localctx)
+            self._ctx = localctx
+            _prevctx = localctx
+
+            self.state = 340
+            self.primaryExpression()
+            self._ctx.stop = self._input.LT(-1)
+            self.state = 350
+            self._errHandler.sync(self)
+            _alt = self._interp.adaptivePredict(self._input,37,self._ctx)
+            while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
+                if _alt==1:
+                    if self._parseListeners is not None:
+                        self.triggerExitRuleEvent()
+                    _prevctx = localctx
+                    self.state = 348
+                    self._errHandler.sync(self)
+                    la_ = self._interp.adaptivePredict(self._input,36,self._ctx)
+                    if la_ == 1:
+                        localctx = uvl_python_parser.MulExpressionContext(self, uvl_python_parser.MultiplicativeExpressionContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_multiplicativeExpression)
+                        self.state = 342
+                        if not self.precpred(self._ctx, 3):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 3)")
+                        self.state = 343
+                        self.match(uvl_python_parser.MUL)
+                        self.state = 344
+                        self.primaryExpression()
+                        pass
+
+                    elif la_ == 2:
+                        localctx = uvl_python_parser.DivExpressionContext(self, uvl_python_parser.MultiplicativeExpressionContext(self, _parentctx, _parentState))
+                        self.pushNewRecursionContext(localctx, _startState, self.RULE_multiplicativeExpression)
+                        self.state = 345
+                        if not self.precpred(self._ctx, 2):
+                            from antlr4.error.Errors import FailedPredicateException
+                            raise FailedPredicateException(self, "self.precpred(self._ctx, 2)")
+                        self.state = 346
+                        self.match(uvl_python_parser.DIV)
+                        self.state = 347
+                        self.primaryExpression()
+                        pass
+
+             
+                self.state = 352
+                self._errHandler.sync(self)
+                _alt = self._interp.adaptivePredict(self._input,37,self._ctx)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.unrollRecursionContexts(_parentctx)
+        return localctx
+
+
+    class PrimaryExpressionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_primaryExpression
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class BracketExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+        def expression(self):
+            return self.getTypedRuleContext(uvl_python_parser.ExpressionContext,0)
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterBracketExpression" ):
+                listener.enterBracketExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitBracketExpression" ):
+                listener.exitBracketExpression(self)
+
+
+    class AggregateFunctionExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def aggregateFunction(self):
+            return self.getTypedRuleContext(uvl_python_parser.AggregateFunctionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAggregateFunctionExpression" ):
+                listener.enterAggregateFunctionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAggregateFunctionExpression" ):
+                listener.exitAggregateFunctionExpression(self)
+
+
+    class FloatLiteralExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def FLOAT(self):
+            return self.getToken(uvl_python_parser.FLOAT, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFloatLiteralExpression" ):
+                listener.enterFloatLiteralExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFloatLiteralExpression" ):
+                listener.exitFloatLiteralExpression(self)
+
+
+    class StringLiteralExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def STRING(self):
+            return self.getToken(uvl_python_parser.STRING, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterStringLiteralExpression" ):
+                listener.enterStringLiteralExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitStringLiteralExpression" ):
+                listener.exitStringLiteralExpression(self)
+
+
+    class IntegerLiteralExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def INTEGER(self):
+            return self.getToken(uvl_python_parser.INTEGER, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterIntegerLiteralExpression" ):
+                listener.enterIntegerLiteralExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitIntegerLiteralExpression" ):
+                listener.exitIntegerLiteralExpression(self)
+
+
+    class LiteralExpressionContext(PrimaryExpressionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.PrimaryExpressionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLiteralExpression" ):
+                listener.enterLiteralExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLiteralExpression" ):
+                listener.exitLiteralExpression(self)
+
+
+
+    def primaryExpression(self):
+
+        localctx = uvl_python_parser.PrimaryExpressionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 52, self.RULE_primaryExpression)
+        try:
+            self.state = 362
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [54]:
+                localctx = uvl_python_parser.FloatLiteralExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 353
+                self.match(uvl_python_parser.FLOAT)
+                pass
+            elif token in [55]:
+                localctx = uvl_python_parser.IntegerLiteralExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 354
+                self.match(uvl_python_parser.INTEGER)
+                pass
+            elif token in [61]:
+                localctx = uvl_python_parser.StringLiteralExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 3)
+                self.state = 355
+                self.match(uvl_python_parser.STRING)
+                pass
+            elif token in [24, 25, 26, 27, 28]:
+                localctx = uvl_python_parser.AggregateFunctionExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 4)
+                self.state = 356
+                self.aggregateFunction()
+                pass
+            elif token in [59, 60]:
+                localctx = uvl_python_parser.LiteralExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 5)
+                self.state = 357
+                self.reference()
+                pass
+            elif token in [1]:
+                localctx = uvl_python_parser.BracketExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 6)
+                self.state = 358
+                self.match(uvl_python_parser.OPEN_PAREN)
+                self.state = 359
+                self.expression()
+                self.state = 360
+                self.match(uvl_python_parser.CLOSE_PAREN)
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class AggregateFunctionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_aggregateFunction
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class NumericAggregateFunctionExpressionContext(AggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def numericAggregateFunction(self):
+            return self.getTypedRuleContext(uvl_python_parser.NumericAggregateFunctionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterNumericAggregateFunctionExpression" ):
+                listener.enterNumericAggregateFunctionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitNumericAggregateFunctionExpression" ):
+                listener.exitNumericAggregateFunctionExpression(self)
+
+
+    class StringAggregateFunctionExpressionContext(AggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def stringAggregateFunction(self):
+            return self.getTypedRuleContext(uvl_python_parser.StringAggregateFunctionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterStringAggregateFunctionExpression" ):
+                listener.enterStringAggregateFunctionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitStringAggregateFunctionExpression" ):
+                listener.exitStringAggregateFunctionExpression(self)
+
+
+    class AvgAggregateFunctionExpressionContext(AggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def avgAggregateFunction(self):
+            return self.getTypedRuleContext(uvl_python_parser.AvgAggregateFunctionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAvgAggregateFunctionExpression" ):
+                listener.enterAvgAggregateFunctionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAvgAggregateFunctionExpression" ):
+                listener.exitAvgAggregateFunctionExpression(self)
+
+
+    class SumAggregateFunctionExpressionContext(AggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.AggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def sumAggregateFunction(self):
+            return self.getTypedRuleContext(uvl_python_parser.SumAggregateFunctionContext,0)
+
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterSumAggregateFunctionExpression" ):
+                listener.enterSumAggregateFunctionExpression(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitSumAggregateFunctionExpression" ):
+                listener.exitSumAggregateFunctionExpression(self)
+
+
+
+    def aggregateFunction(self):
+
+        localctx = uvl_python_parser.AggregateFunctionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 54, self.RULE_aggregateFunction)
+        try:
+            self.state = 368
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [25]:
+                localctx = uvl_python_parser.SumAggregateFunctionExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 364
+                self.sumAggregateFunction()
+                pass
+            elif token in [26]:
+                localctx = uvl_python_parser.AvgAggregateFunctionExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 365
+                self.avgAggregateFunction()
+                pass
+            elif token in [24]:
+                localctx = uvl_python_parser.StringAggregateFunctionExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 3)
+                self.state = 366
+                self.stringAggregateFunction()
+                pass
+            elif token in [27, 28]:
+                localctx = uvl_python_parser.NumericAggregateFunctionExpressionContext(self, localctx)
+                self.enterOuterAlt(localctx, 4)
+                self.state = 367
+                self.numericAggregateFunction()
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class SumAggregateFunctionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def SUM_KEY(self):
+            return self.getToken(uvl_python_parser.SUM_KEY, 0)
+
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+
+        def reference(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ReferenceContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,i)
+
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def COMMA(self):
+            return self.getToken(uvl_python_parser.COMMA, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_sumAggregateFunction
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterSumAggregateFunction" ):
+                listener.enterSumAggregateFunction(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitSumAggregateFunction" ):
+                listener.exitSumAggregateFunction(self)
+
+
+
+
+    def sumAggregateFunction(self):
+
+        localctx = uvl_python_parser.SumAggregateFunctionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 56, self.RULE_sumAggregateFunction)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 370
+            self.match(uvl_python_parser.SUM_KEY)
+            self.state = 371
+            self.match(uvl_python_parser.OPEN_PAREN)
+            self.state = 375
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,40,self._ctx)
+            if la_ == 1:
+                self.state = 372
+                self.reference()
+                self.state = 373
+                self.match(uvl_python_parser.COMMA)
+
+
+            self.state = 377
+            self.reference()
+            self.state = 378
+            self.match(uvl_python_parser.CLOSE_PAREN)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class AvgAggregateFunctionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def AVG_KEY(self):
+            return self.getToken(uvl_python_parser.AVG_KEY, 0)
+
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+
+        def reference(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.ReferenceContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,i)
+
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def COMMA(self):
+            return self.getToken(uvl_python_parser.COMMA, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_avgAggregateFunction
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterAvgAggregateFunction" ):
+                listener.enterAvgAggregateFunction(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitAvgAggregateFunction" ):
+                listener.exitAvgAggregateFunction(self)
+
+
+
+
+    def avgAggregateFunction(self):
+
+        localctx = uvl_python_parser.AvgAggregateFunctionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 58, self.RULE_avgAggregateFunction)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 380
+            self.match(uvl_python_parser.AVG_KEY)
+            self.state = 381
+            self.match(uvl_python_parser.OPEN_PAREN)
+            self.state = 385
+            self._errHandler.sync(self)
+            la_ = self._interp.adaptivePredict(self._input,41,self._ctx)
+            if la_ == 1:
+                self.state = 382
+                self.reference()
+                self.state = 383
+                self.match(uvl_python_parser.COMMA)
+
+
+            self.state = 387
+            self.reference()
+            self.state = 388
+            self.match(uvl_python_parser.CLOSE_PAREN)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class StringAggregateFunctionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_stringAggregateFunction
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class LengthAggregateFunctionContext(StringAggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.StringAggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def LEN_KEY(self):
+            return self.getToken(uvl_python_parser.LEN_KEY, 0)
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLengthAggregateFunction" ):
+                listener.enterLengthAggregateFunction(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLengthAggregateFunction" ):
+                listener.exitLengthAggregateFunction(self)
+
+
+
+    def stringAggregateFunction(self):
+
+        localctx = uvl_python_parser.StringAggregateFunctionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 60, self.RULE_stringAggregateFunction)
+        try:
+            localctx = uvl_python_parser.LengthAggregateFunctionContext(self, localctx)
+            self.enterOuterAlt(localctx, 1)
+            self.state = 390
+            self.match(uvl_python_parser.LEN_KEY)
+            self.state = 391
+            self.match(uvl_python_parser.OPEN_PAREN)
+            self.state = 392
+            self.reference()
+            self.state = 393
+            self.match(uvl_python_parser.CLOSE_PAREN)
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class NumericAggregateFunctionContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_numericAggregateFunction
+
+     
+        def copyFrom(self, ctx:ParserRuleContext):
+            super().copyFrom(ctx)
+
+
+
+    class CeilAggregateFunctionContext(NumericAggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.NumericAggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def CEIL_KEY(self):
+            return self.getToken(uvl_python_parser.CEIL_KEY, 0)
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterCeilAggregateFunction" ):
+                listener.enterCeilAggregateFunction(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitCeilAggregateFunction" ):
+                listener.exitCeilAggregateFunction(self)
+
+
+    class FloorAggregateFunctionContext(NumericAggregateFunctionContext):
+
+        def __init__(self, parser, ctx:ParserRuleContext): # actually a uvl_python_parser.NumericAggregateFunctionContext
+            super().__init__(parser)
+            self.copyFrom(ctx)
+
+        def FLOOR_KEY(self):
+            return self.getToken(uvl_python_parser.FLOOR_KEY, 0)
+        def OPEN_PAREN(self):
+            return self.getToken(uvl_python_parser.OPEN_PAREN, 0)
+        def reference(self):
+            return self.getTypedRuleContext(uvl_python_parser.ReferenceContext,0)
+
+        def CLOSE_PAREN(self):
+            return self.getToken(uvl_python_parser.CLOSE_PAREN, 0)
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFloorAggregateFunction" ):
+                listener.enterFloorAggregateFunction(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFloorAggregateFunction" ):
+                listener.exitFloorAggregateFunction(self)
+
+
+
+    def numericAggregateFunction(self):
+
+        localctx = uvl_python_parser.NumericAggregateFunctionContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 62, self.RULE_numericAggregateFunction)
+        try:
+            self.state = 405
+            self._errHandler.sync(self)
+            token = self._input.LA(1)
+            if token in [27]:
+                localctx = uvl_python_parser.FloorAggregateFunctionContext(self, localctx)
+                self.enterOuterAlt(localctx, 1)
+                self.state = 395
+                self.match(uvl_python_parser.FLOOR_KEY)
+                self.state = 396
+                self.match(uvl_python_parser.OPEN_PAREN)
+                self.state = 397
+                self.reference()
+                self.state = 398
+                self.match(uvl_python_parser.CLOSE_PAREN)
+                pass
+            elif token in [28]:
+                localctx = uvl_python_parser.CeilAggregateFunctionContext(self, localctx)
+                self.enterOuterAlt(localctx, 2)
+                self.state = 400
+                self.match(uvl_python_parser.CEIL_KEY)
+                self.state = 401
+                self.match(uvl_python_parser.OPEN_PAREN)
+                self.state = 402
+                self.reference()
+                self.state = 403
+                self.match(uvl_python_parser.CLOSE_PAREN)
+                pass
+            else:
+                raise NoViableAltException(self)
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class ReferenceContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def id_(self, i:int=None):
+            if i is None:
+                return self.getTypedRuleContexts(uvl_python_parser.IdContext)
+            else:
+                return self.getTypedRuleContext(uvl_python_parser.IdContext,i)
+
+
+        def DOT(self, i:int=None):
+            if i is None:
+                return self.getTokens(uvl_python_parser.DOT)
+            else:
+                return self.getToken(uvl_python_parser.DOT, i)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_reference
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterReference" ):
+                listener.enterReference(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitReference" ):
+                listener.exitReference(self)
+
+
+
+
+    def reference(self):
+
+        localctx = uvl_python_parser.ReferenceContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 64, self.RULE_reference)
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 412
+            self._errHandler.sync(self)
+            _alt = self._interp.adaptivePredict(self._input,43,self._ctx)
+            while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
+                if _alt==1:
+                    self.state = 407
+                    self.id_()
+                    self.state = 408
+                    self.match(uvl_python_parser.DOT) 
+                self.state = 414
+                self._errHandler.sync(self)
+                _alt = self._interp.adaptivePredict(self._input,43,self._ctx)
+
+            self.state = 415
+            self.id_()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class IdContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def ID_STRICT(self):
+            return self.getToken(uvl_python_parser.ID_STRICT, 0)
+
+        def ID_NOT_STRICT(self):
+            return self.getToken(uvl_python_parser.ID_NOT_STRICT, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_id
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterId" ):
+                listener.enterId(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitId" ):
+                listener.exitId(self)
+
+
+
+
+    def id_(self):
+
+        localctx = uvl_python_parser.IdContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 66, self.RULE_id)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 417
+            _la = self._input.LA(1)
+            if not(_la==59 or _la==60):
+                self._errHandler.recoverInline(self)
+            else:
+                self._errHandler.reportMatch(self)
+                self.consume()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class FeatureTypeContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def STRING_KEY(self):
+            return self.getToken(uvl_python_parser.STRING_KEY, 0)
+
+        def INTEGER_KEY(self):
+            return self.getToken(uvl_python_parser.INTEGER_KEY, 0)
+
+        def BOOLEAN_KEY(self):
+            return self.getToken(uvl_python_parser.BOOLEAN_KEY, 0)
+
+        def REAL_KEY(self):
+            return self.getToken(uvl_python_parser.REAL_KEY, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_featureType
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterFeatureType" ):
+                listener.enterFeatureType(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitFeatureType" ):
+                listener.exitFeatureType(self)
+
+
+
+
+    def featureType(self):
+
+        localctx = uvl_python_parser.FeatureTypeContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 68, self.RULE_featureType)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 419
+            _la = self._input.LA(1)
+            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 15728640) != 0)):
+                self._errHandler.recoverInline(self)
+            else:
+                self._errHandler.reportMatch(self)
+                self.consume()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class LanguageLevelContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def majorLevel(self):
+            return self.getTypedRuleContext(uvl_python_parser.MajorLevelContext,0)
+
+
+        def DOT(self):
+            return self.getToken(uvl_python_parser.DOT, 0)
+
+        def minorLevel(self):
+            return self.getTypedRuleContext(uvl_python_parser.MinorLevelContext,0)
+
+
+        def MUL(self):
+            return self.getToken(uvl_python_parser.MUL, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_languageLevel
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterLanguageLevel" ):
+                listener.enterLanguageLevel(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitLanguageLevel" ):
+                listener.exitLanguageLevel(self)
+
+
+
+
+    def languageLevel(self):
+
+        localctx = uvl_python_parser.LanguageLevelContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 70, self.RULE_languageLevel)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 421
+            self.majorLevel()
+            self.state = 427
+            self._errHandler.sync(self)
+            _la = self._input.LA(1)
+            if _la==58:
+                self.state = 422
+                self.match(uvl_python_parser.DOT)
+                self.state = 425
+                self._errHandler.sync(self)
+                token = self._input.LA(1)
+                if token in [30, 31, 32, 33]:
+                    self.state = 423
+                    self.minorLevel()
+                    pass
+                elif token in [51]:
+                    self.state = 424
+                    self.match(uvl_python_parser.MUL)
+                    pass
+                else:
+                    raise NoViableAltException(self)
+
+
+
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class MajorLevelContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def BOOLEAN_KEY(self):
+            return self.getToken(uvl_python_parser.BOOLEAN_KEY, 0)
+
+        def ARITHMETIC_KEY(self):
+            return self.getToken(uvl_python_parser.ARITHMETIC_KEY, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_majorLevel
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterMajorLevel" ):
+                listener.enterMajorLevel(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitMajorLevel" ):
+                listener.exitMajorLevel(self)
+
+
+
+
+    def majorLevel(self):
+
+        localctx = uvl_python_parser.MajorLevelContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 72, self.RULE_majorLevel)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 429
+            _la = self._input.LA(1)
+            if not(_la==21 or _la==29):
+                self._errHandler.recoverInline(self)
+            else:
+                self._errHandler.reportMatch(self)
+                self.consume()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+    class MinorLevelContext(ParserRuleContext):
+        __slots__ = 'parser'
+
+        def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
+            super().__init__(parent, invokingState)
+            self.parser = parser
+
+        def GROUP_CARDINALITY_KEY(self):
+            return self.getToken(uvl_python_parser.GROUP_CARDINALITY_KEY, 0)
+
+        def FEATURE_CARDINALITY_KEY(self):
+            return self.getToken(uvl_python_parser.FEATURE_CARDINALITY_KEY, 0)
+
+        def AGGREGATE_KEY(self):
+            return self.getToken(uvl_python_parser.AGGREGATE_KEY, 0)
+
+        def STRING_CONSTRAINTS_KEY(self):
+            return self.getToken(uvl_python_parser.STRING_CONSTRAINTS_KEY, 0)
+
+        def getRuleIndex(self):
+            return uvl_python_parser.RULE_minorLevel
+
+        def enterRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "enterMinorLevel" ):
+                listener.enterMinorLevel(self)
+
+        def exitRule(self, listener:ParseTreeListener):
+            if hasattr( listener, "exitMinorLevel" ):
+                listener.exitMinorLevel(self)
+
+
+
+
+    def minorLevel(self):
+
+        localctx = uvl_python_parser.MinorLevelContext(self, self._ctx, self.state)
+        self.enterRule(localctx, 74, self.RULE_minorLevel)
+        self._la = 0 # Token type
+        try:
+            self.enterOuterAlt(localctx, 1)
+            self.state = 431
+            _la = self._input.LA(1)
+            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 16106127360) != 0)):
+                self._errHandler.recoverInline(self)
+            else:
+                self._errHandler.reportMatch(self)
+                self.consume()
+        except RecognitionException as re:
+            localctx.exception = re
+            self._errHandler.reportError(self, re)
+            self._errHandler.recover(self, re)
+        finally:
+            self.exitRule()
+        return localctx
+
+
+
+    def sempred(self, localctx:RuleContext, ruleIndex:int, predIndex:int):
+        if self._predicates == None:
+            self._predicates = dict()
+        self._predicates[21] = self.constraint_sempred
+        self._predicates[24] = self.additiveExpression_sempred
+        self._predicates[25] = self.multiplicativeExpression_sempred
+        pred = self._predicates.get(ruleIndex, None)
+        if pred is None:
+            raise Exception("No predicate with index:" + str(ruleIndex))
+        else:
+            return pred(localctx, predIndex)
+
+    def constraint_sempred(self, localctx:ConstraintContext, predIndex:int):
+            if predIndex == 0:
+                return self.precpred(self._ctx, 4)
+         
+
+            if predIndex == 1:
+                return self.precpred(self._ctx, 3)
+         
+
+            if predIndex == 2:
+                return self.precpred(self._ctx, 2)
+         
+
+            if predIndex == 3:
+                return self.precpred(self._ctx, 1)
+         
+
+    def additiveExpression_sempred(self, localctx:AdditiveExpressionContext, predIndex:int):
+            if predIndex == 4:
+                return self.precpred(self._ctx, 3)
+         
+
+            if predIndex == 5:
+                return self.precpred(self._ctx, 2)
+         
+
+    def multiplicativeExpression_sempred(self, localctx:MultiplicativeExpressionContext, predIndex:int):
+            if predIndex == 6:
+                return self.precpred(self._ctx, 3)
+         
+
+            if predIndex == 7:
+                return self.precpred(self._ctx, 2)
+         
+
+
+
+

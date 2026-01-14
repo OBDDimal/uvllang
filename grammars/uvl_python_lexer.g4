@@ -1,5 +1,5 @@
-lexer grammar UVLPythonLexer;
-import UVLLexer;
+lexer grammar uvl_python_lexer;
+import uvl_lexer;
 
 OPEN_PAREN: '(' {self.opened += 1;};
 CLOSE_PAREN: ')' {self.opened -= 1;};

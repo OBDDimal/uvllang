@@ -1,4 +1,4 @@
-lexer grammar UVLLexer;
+lexer grammar uvl_lexer;
 
 INDENT: '<INDENT>';
 DEDENT: '<DEDENT>';
@@ -20,7 +20,6 @@ SUM_KEY: 'sum';
 AVG_KEY: 'avg';
 FLOOR_KEY: 'floor';
 CEIL_KEY: 'ceil';
-TYPE_KEY: 'Type';
 ARITHMETIC_KEY: 'Arithmetic';
 GROUP_CARDINALITY_KEY: 'group-cardinality';
 FEATURE_CARDINALITY_KEY: 'feature-cardinality';
@@ -71,7 +70,7 @@ DOT: '.';
 ID_NOT_STRICT: '"'~[\r\n".]+'"';
 ID_STRICT: [a-zA-Z]([a-zA-Z0-9_#§%?\\'äüöß;])*;
 
-STRING: '\''~[\r\n']+'\'';
+STRING: ('"' ~["\r\n]* '"') | ('\'' ~['\r\n]* '\'');
 
 SKIP_: ( SPACES | COMMENT) -> skip;
 

@@ -1,165 +1,102 @@
-# UVL - Universal Variability Language
+# uvllang
 
-**UVL (Universal Variability Language)** is a concise and extensible language for modeling variability in software product lines. It supports multiple programming languages and provides a grammar-based foundation for building tools and parsers.
+A Python parser for the Universal Variability Language (UVL) based on ANTLR4.
 
-This repository contains the **ANTLR4 grammar files** for UVL. With these, you can generate parsers for UVL tailored to specific programming languages like Java, JavaScript, and Python.
+## Installation
 
-## ✨ Key Features
-
-- Language-level modularity
-- Namespaces and imports
-- Feature trees with attributes and cardinalities
-- Cross-tree constraints
-- Extensible for different target languages
-
-## 📦 Repository Structure
-
-- `uvl/UVLParser.g4` – Base grammar in EBNF form
-- `uvl/UVLLexer.g4` – Base lexer grammar for UVL
-- `uvl/Java/UVLJava*.g4`, `uvl/Python/UVLPython*.g4`, etc. – Language-specific grammar files
-- `java/` – Java-based parser implementation using Maven (generated)
-- `python/` – Python-based parser implementation (generated)
-- `js/` – JavaScript-based parser implementation (generated)
-
-UVL uses [ANTLR4](https://www.antlr.org/) as its parser generator.
+```bash
+pip install uvllang
+```
 
 ## Usage
 
-To use UVL in your projects, you can either:
+### Basic Parsing
 
-1. **Use the pre-built parsers**
-   ### Java Parser
-   Include the following dependency in your Maven project:
-   ```xml
-   <dependency>
-       <groupId>io.github.universal-variability-language</groupId>
-       <artifactId>uvl-parser</artifactId>
-       <version>0.3</version>
-   </dependency>
-   ```
-   ### Python Parser
-   Install the package via pip:
-   ```bash
-   pip install uvlparser
-   ```
-   ### JavaScript Parser
-   Install the package via npm:
-   ```bash
-   npm install uvl-parser
-   ```
-2. **Build the parser manually** See the sections below for details.
+```python
+from uvl.main import UVL
 
-## ⚙️ Building the Parser manually
+# Parse a UVL file
+model = UVL(from_file="path/to/file.uvl")
 
-### Java Parser
+# Access features
+features = model.features
+print(f"Number of features: {len(features)}")
 
-#### Prerequisites
-
-- Java 17+
-- [Maven](https://maven.apache.org/)
-
-#### Build Steps
-
-1. Clone the repository:
-
-```bash
- git clone https://github.com/Universal-Variability-Language/uvl-parser
+# Access constraints
+constraints = model.constraints
 ```
 
-2. Build the parser:
+### CNF Conversion
 
-```bash
-make java_parser
+Convert feature models to Conjunctive Normal Form (CNF) for SAT solvers:
+
+```python
+from uvllang.main import UVL
+
+# Parse UVL file
+model = UVL(from_file="model.uvl")
+
+# Convert to CNF
+cnf_clauses = model.to_cnf()
+
+# Export to DIMACS format
+with open("output.dimacs", 'w') as f:
+    f.write(f"p cnf {len(model.features)} {len(cnf_clauses)}\n")
+    for clause in cnf_clauses:
+        f.write(' '.join(map(str, clause)) + ' 0\n')
 ```
 
-This will generate the jar file in the `java/target/` directory. You can also build the JAR with:
+Or use the command-line tool:
 
 ```bash
-cd java && mvn clean package
+# Convert UVL to DIMACS (saves to current directory)
+uvl2cnf model.uvl
+
+# Specify output file
+uvl2cnf model.uvl output.dimacs
 ```
 
-3. Include the generated JAR in your Java project.
+The CNF conversion supports:
+- Mandatory and optional features
+- OR groups (at least one child)
+- XOR/Alternative groups (exactly one child)
+- Cross-tree constraints (using sympy)
 
----
+### Backward Compatibility
 
-### Python Parser
+```python
+import uvl
 
-#### Prerequisites
+# Legacy API still supported
+tree = uvl.get_tree("path/to/file.uvl")
+features = uvl.get_features("path/to/file.uvl")
+constraints = uvl.get_constraints("path/to/file.uvl")
+```
 
-- Python 3.8+
-- [ANTLR4](https://www.antlr.org/)
-
-#### Build Steps
-
-1. Clone the repository:
+## Testing
 
 ```bash
- git clone https://github.com/Universal-Variability-Language/uvl-parser
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+python -m pytest tests/
 ```
 
-2. Build the parser:
+## Packaging (For Developers)
 
 ```bash
-  make python_parser
+# Generate parsers from grammar files
+python generate_parsers.py
+
+# Build package
+python build_package.py
+
+# Or build manually
+python -m build
 ```
 
-This will generate the parser files in the `python/` directory. To build the wheel package, run:
-
-```bash
-  make python_prepare_package
-```
-
-### JavaScript Parser
-
-#### Prerequisites
-
-- Node.js 14+
-- [ANTLR4](https://www.antlr.org/)
-
-#### Build Steps
-
-1. Clone the repository:
-
-```bash
- git clone https://github.com/Universal-Variability-Language/uvl-parser
-```
-
-2. Build the parser:
-
-```bash
-make javascript_parser
-```
-
-## This will generate the parser files in the `js/` directory.
-
-## 💡 Universal-Variability-Language (UVL)
-
-For comprehensive guidance on utilizing UVL, please refer to the following publication:
-
-[![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.jss.2024.112326-blue)](https://doi.org/10.1016/j.jss.2024.112326)
-
-🔗 **Sample UVL models** are available at: https://github.com/Universal-Variability-Language/uvl-models
-
----
-
-## 📚 Resources
-
-**UVL Models & Tools**
-
-- https://github.com/Universal-Variability-Language/uvl-models
-- https://www.uvlhub.io/
-
-**Tooling Ecosystem**
-
-- https://github.com/FeatureIDE/FeatureIDE
-- https://ide.flamapy.org/
-- https://github.com/Universal-Variability-Language/uvl-lsp
-- https://github.com/SECPS/TraVarT
-- https://github.com/AlexCortinas/spl-js-engine
-
----
-
-## 📖 Citation
+## Citation
 
 If you use UVL in your research, please cite:
 
@@ -170,17 +107,12 @@ If you use UVL in your research, please cite:
   volume    = {225},
   pages     = {112326},
   year      = {2025},
-  issn      = {0164-1212},
   doi       = {https://doi.org/10.1016/j.jss.2024.112326},
-  url       = {https://www.sciencedirect.com/science/article/pii/S0164121224003704},
-  author    = {David Benavides and Chico Sundermann and Kevin Feichtinger and José A. Galindo and Rick Rabiser and Thomas Thüm},
-  keywords  = {Feature model, Software product lines, Variability}
+  author    = {David Benavides and Chico Sundermann and Kevin Feichtinger and José A. Galindo and Rick Rabiser and Thomas Thüm}
 }
 ```
 
----
+## Links
 
-## 📬 Contact & Contributions
-
-Feel free to open issues or pull requests if you have suggestions or improvements. For questions or collaboration inquiries, visit the UVL Website:
-https://universal-variability-language.github.io/
+- [UVL Models Repository](https://github.com/Universal-Variability-Language/uvl-models)
+- [UVL Website](https://universal-variability-language.github.io/)

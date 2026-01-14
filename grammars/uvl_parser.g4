@@ -1,7 +1,7 @@
-parser grammar UVLParser;
+parser grammar uvl_parser;
 
 options {
-	tokenVocab = UVLLexer;
+	tokenVocab = uvl_lexer;
 }
 
 featureModel:
@@ -40,7 +40,7 @@ attribute: valueAttribute | constraintAttribute;
 
 valueAttribute: key value?;
 key: id;
-value: BOOLEAN | FLOAT | INTEGER | STRING | attributes | vector;
+value: BOOLEAN | FLOAT | INTEGER | STRING | ID_NOT_STRICT | attributes | vector;
 vector: OPEN_BRACK (value (COMMA value)*)? CLOSE_BRACK;
 
 constraintAttribute:
@@ -127,7 +127,7 @@ featureType: STRING_KEY | INTEGER_KEY | BOOLEAN_KEY | REAL_KEY;
 
 languageLevel: majorLevel (DOT (minorLevel | MUL))?;
 
-majorLevel: BOOLEAN_KEY | ARITHMETIC_KEY | TYPE_KEY;
+majorLevel: BOOLEAN_KEY | ARITHMETIC_KEY;
 
 minorLevel:
 	GROUP_CARDINALITY_KEY
