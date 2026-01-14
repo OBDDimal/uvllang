@@ -94,7 +94,7 @@ class TestCNFConversion:
         model = UVL(from_file=auto_file)
         cnf = model.to_cnf()
         
-        assert len(cnf) == 10311
+        assert len(cnf) == 7876  # Updated: arithmetic constraints are now properly ignored
         assert len(model.features) == 2513
         assert all(isinstance(clause, list) for clause in cnf)
         assert all(isinstance(lit, int) for clause in cnf for lit in clause)

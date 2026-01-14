@@ -18,16 +18,29 @@ class CustomErrorListener(ErrorListener):
 class FeatureConstraintExtractor(uvl_python_parserListener):
     def __init__(self):
         self.features = []
-        self.constraints = []
+        self.boolean_constraints = []
+        self.arithmetic_constraints = []
+        self.feature_types = {}  # feature_name -> type
 
     def enterFeature(self, ctx):
         if ctx.reference():
             feature_name = ctx.reference().getText()
             self.features.append(feature_name)
+            
+            # Extract feature type if present
+            if ctx.featureType():
+                type_text = ctx.featureType().getText()
+                self.feature_types[feature_name] = type_text
 
     def enterConstraintLine(self, ctx):
         constraint_text = ctx.constraint().getText()
-        self.constraints.append(constraint_text)
+        
+        # Check if this is an arithmetic constraint (contains comparison operators)
+        if any(op in constraint_text for op in ['==', '!=', '<', '>', '<=', '>=']):
+            self.arithmetic_constraints.append(constraint_text)
+        else:
+            # Boolean constraint (logical operators only)
+            self.boolean_constraints.append(constraint_text)
 
 
 class FeatureModelBuilder(uvl_python_parserListener):
@@ -120,7 +133,9 @@ class UVL:
         self._file_path = from_file
         self._tree = None
         self._features = None
-        self._constraints = None
+        self._boolean_constraints = None
+        self._arithmetic_constraints = None
+        self._feature_types = None
         self._parse_file()
 
     def _parse_file(self):
@@ -151,15 +166,44 @@ class UVL:
 
     @property
     def constraints(self):
-        if self._constraints is None:
+        """Return all constraints (boolean + arithmetic) for backward compatibility."""
+        return self.boolean_constraints + self.arithmetic_constraints
+
+    @property
+    def boolean_constraints(self):
+        """Return only boolean constraints that can be converted to CNF."""
+        if self._boolean_constraints is None:
             extractor = FeatureConstraintExtractor()
             walker = ParseTreeWalker()
             walker.walk(extractor, self._tree)
-            self._constraints = extractor.constraints
-        return self._constraints
+            self._boolean_constraints = extractor.boolean_constraints
+        return self._boolean_constraints
 
-    def to_cnf(self):
+    @property
+    def arithmetic_constraints(self):
+        """Return arithmetic constraints that cannot be directly converted to CNF."""
+        if self._arithmetic_constraints is None:
+            extractor = FeatureConstraintExtractor()
+            walker = ParseTreeWalker()
+            walker.walk(extractor, self._tree)
+            self._arithmetic_constraints = extractor.arithmetic_constraints
+        return self._arithmetic_constraints
+
+    @property
+    def feature_types(self):
+        """Return feature type information (feature_name -> type)."""
+        if self._feature_types is None:
+            extractor = FeatureConstraintExtractor()
+            walker = ParseTreeWalker()
+            walker.walk(extractor, self._tree)
+            self._feature_types = extractor.feature_types
+        return self._feature_types
+
+    def to_cnf(self, verbose_info=True):
         """Convert the feature model to CNF (Conjunctive Normal Form).
+        
+        Args:
+            verbose_info (bool): Whether to print info messages about ignored constraints.
         
         Returns:
             list: List of clauses, where each clause is a list of literals.
@@ -202,8 +246,12 @@ class UVL:
                         for j in range(i + 1, len(member_ids)):
                             clauses.append([-member_ids[i], -member_ids[j]])
         
-        if self.constraints:
-            clauses.extend(self._constraints_to_cnf(self.constraints, feature_to_id))
+        if self.boolean_constraints:
+            clauses.extend(self._constraints_to_cnf(self.boolean_constraints, feature_to_id))
+        
+        # Inform user about ignored arithmetic constraints
+        if verbose_info and self.arithmetic_constraints:
+            print(f"Info: Ignored {len(self.arithmetic_constraints)} arithmetic constraints")
         
         return clauses
     
