@@ -67,7 +67,7 @@ uvl2cnf model.uvl -v
 
 ```bash
 # Install development dependencies
-pip install -e .
+pip install -e .[dev]
 
 # Run tests
 python -m pytest tests/

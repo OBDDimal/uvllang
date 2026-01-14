@@ -7,9 +7,10 @@ name = "uvllang"
 version = "0.1.0"
 description = "Parser for Universal Variability Language (UVL) with CNF conversion support"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = "LGPL-3.0-or-later"
 authors = [
-    {name = "UVL Team", email = "jagalindo@us.es"},
+    {name = "h3ssto", email = "tobias.hess@variability.dev"},
+    {name = "UVL Team", email = "jagalindo@us.es"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
