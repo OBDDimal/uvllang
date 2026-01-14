@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def generate_parsers():
     """Generate the Python parsers from ANTLR4 grammars."""
     repo_root = Path(__file__).parent
@@ -17,9 +18,10 @@ def generate_parsers():
     cmd = [
         "antlr4",
         "-Dlanguage=Python3",
-        "-o", ".",
+        "-o",
+        ".",
         "uvl_python_lexer.g4",
-        "uvl_python_parser.g4"
+        "uvl_python_parser.g4",
     ]
 
     print("Generating parsers...")
@@ -43,7 +45,7 @@ def generate_parsers():
             new_name = "uvl_python_parser_listener.py"
         else:
             new_name = file.name
-        
+
         dest = uvl_dir / new_name
         file.rename(dest)
         print(f"Moved {file.name} to uvl/{new_name}")
@@ -55,6 +57,7 @@ def generate_parsers():
             print(f"Cleaned up {artifact_file.name}")
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(generate_parsers())
