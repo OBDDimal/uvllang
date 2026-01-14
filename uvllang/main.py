@@ -260,26 +260,3 @@ class UVL:
             literals.append(symbol_to_id[clause])
         
         return literals
-
-
-def get_tree(argv):
-    return UVL(from_file=argv).tree
-
-
-def get_features(argv):
-    return UVL(from_file=argv).features
-
-
-def get_constraints(argv):
-    return UVL(from_file=argv).constraints
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <path_to_uvl_file>")
-        sys.exit(1)
-
-    model = UVL(from_file=sys.argv[1])
-    print(model.tree.toStringTree(recog=None))
