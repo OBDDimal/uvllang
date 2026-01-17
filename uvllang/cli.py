@@ -15,9 +15,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  uvl2cnf model.uvl                    # Convert to model.dimacs
+  uvl2cnf model.uvl                    # Convert to model.dimacs (using Lark)
   uvl2cnf model.uvl output.dimacs      # Convert to specific output file
   uvl2cnf model.uvl -v                 # Verbose output showing ignored constraints
+  uvl2cnf model.uvl --antlr            # Use ANTLR parser instead of Lark
         """,
     )
 
@@ -33,8 +34,24 @@ Examples:
         action="store_true",
         help="Show detailed information about ignored constraints and types",
     )
+    parser.add_argument(
+        "--lark",
+        action="store_true",
+        help="Use Lark parser (default)",
+    )
+    parser.add_argument(
+        "--antlr",
+        action="store_true",
+        help="Use ANTLR parser instead of Lark",
+    )
 
     args = parser.parse_args()
+
+    # Determine which parser to use (Lark is default)
+    parser_type = "antlr" if args.antlr else "lark"
+
+    if args.verbose:
+        print(f"Using {parser_type.upper()} parser")
 
     uvl_file = args.uvl_file
 
@@ -49,7 +66,7 @@ Examples:
         output_file = os.path.splitext(basename)[0] + ".dimacs"
 
     try:
-        model = UVL(from_file=uvl_file)
+        model = UVL(from_file=uvl_file, parser_type=parser_type)
 
         if args.verbose:
             if model.arithmetic_constraints:

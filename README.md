@@ -1,22 +1,29 @@
 # uvllang
 
-A Python parser for the Universal Variability Language (UVL). Based on ANTLR4, adopted from https://github.com/Universal-Variability-Language/uvl-parser.
+A Python parser for the Universal Variability Language (UVL) with support for both Lark (default, pure Python) and ANTLR4 parsers.
 
 ## Installation
 
 ```bash
+# Install with Lark parser (default, pure Python)
 pip install uvllang
+
+# Install with both Lark and ANTLR parsers
+pip install uvllang[antlr]
 ```
 
 ## Usage
 
-### Parsing
+### Basic Usage
 
 ```python
-from uvllang.main import UVL
+from uvllang import UVL
 
-# Parse a UVL file
+# Parse a UVL file with Lark (default)
 model = UVL(from_file="examples/automotive01.uvl")
+
+# Or use ANTLR parser
+model = UVL(from_file="examples/automotive01.uvl", parser_type="antlr")
 
 # Access features
 print(f"Number of features:", len(model.features))
@@ -32,7 +39,7 @@ print("Arithmetic constraints:", len(model.arithmetic_constraints))
 Convert feature models to Conjunctive Normal Form (CNF) for SAT solvers:
 
 ```python
-from uvllang.main import UVL
+from uvllang import UVL
 
 # Parse UVL file
 model = UVL(from_file="model.uvl")
@@ -44,10 +51,13 @@ cnf.to_file("output.dimacs")
 
 ### Command Line Interface
 
-```bash
-uvl2cnf --help
+The CLI uses **Lark by default** (pure Python, no external dependencies):
 
-# Basic conversion
+```bash
+# Install basic version (Lark only)
+pip install uvllang
+
+# Basic conversion (uses Lark)
 uvl2cnf model.uvl
 
 # Specify output file
@@ -55,13 +65,22 @@ uvl2cnf model.uvl output.dimacs
 
 # Verbose mode (lists ignored constraints)
 uvl2cnf model.uvl -v
+
+# Use ANTLR parser (requires: pip install uvllang[antlr])
+uvl2cnf model.uvl --antlr
 ```
 
 ## Dependencies
 
-- `antlr4-python3-runtime`: ANTLR4 parser runtime
+**Core dependencies** (always installed):
+- `lark`: Lark parser (default, pure Python)
 - `sympy`: Symbolic mathematics for Boolean constraint processing
 - `python-sat`: SAT solver library for CNF handling
+
+**Optional dependencies**:
+- `antlr4-python3-runtime`: ANTLR4 parser runtime (install with: `pip install uvllang[antlr]`)
+
+Both parsers provide identical functionality. Lark is used by default for easier installation and pure Python compatibility.
 
 ## Testing
 

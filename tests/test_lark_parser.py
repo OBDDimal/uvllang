@@ -1,5 +1,8 @@
 """
-Tests for the UVL Parser package.
+Tests for the Lark-based UVL Parser implementation.
+
+These tests verify that the Lark grammar correctly parses UVL files
+and maintains compatibility with the ANTLR implementation.
 """
 
 import pytest
@@ -8,26 +11,25 @@ import tempfile
 from uvllang.main import UVL
 
 
-class TestUVLParser:
-    """Test cases for UVL parsing functionality."""
+class TestLarkUVLParser:
+    """Test cases for Lark-based UVL parsing functionality."""
 
     def test_parse_automotive01_uvl(self):
         """Test parsing the automotive01 UVL file."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=example_file, parser_type="antlr")
+        model = UVL(from_file=example_file, parser_type="lark")
 
         assert model.tree is not None
         assert len(model.features) == 2513
-        assert model.tree.getText().startswith("namespace")
 
     def test_parse_eshop_uvl(self):
         """Test parsing the eshop UVL file."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, parser_type="lark")
 
         assert model.tree is not None
         assert len(model.features) == 173
@@ -49,7 +51,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             assert model.tree is not None
             assert len(model.features) == 3
             assert "Root" in model.features
@@ -68,21 +70,21 @@ features
 
         try:
             with pytest.raises(Exception):
-                UVL(from_file=temp_file)
+                UVL(from_file=temp_file, parser_type="lark")
         finally:
             os.unlink(temp_file)
 
     def test_nonexistent_file_raises_error(self):
         """Test that parsing a nonexistent file raises an error."""
         with pytest.raises(FileNotFoundError):
-            UVL(from_file="nonexistent_file.uvl")
+            UVL(from_file="nonexistent_file.uvl", parser_type="lark")
 
     def test_constraint_classification_eshop(self):
         """Test that eshop.uvl has only arithmetic constraints (no boolean)."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, parser_type="lark")
 
         assert (
             len(model.arithmetic_constraints) == 0
@@ -96,7 +98,7 @@ features
         automotive_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=automotive_file)
+        model = UVL(from_file=automotive_file, parser_type="lark")
 
         assert (
             len(model.boolean_constraints) == 2833
@@ -112,15 +114,15 @@ features
         ), "Should have implication (=>) constraints"
 
 
-class TestCNFConversion:
-    """Test cases for CNF conversion functionality."""
+class TestLarkCNFConversion:
+    """Test cases for CNF conversion functionality with Lark parser."""
 
     def test_cnf_eshop(self):
         """Test CNF conversion for eshop.uvl."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, parser_type="lark")
         cnf = model.to_cnf()
 
         assert len(cnf.clauses) == 289
@@ -133,10 +135,10 @@ class TestCNFConversion:
         auto_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=auto_file)
+        model = UVL(from_file=auto_file, parser_type="lark")
         cnf = model.to_cnf()
 
-        assert len(cnf.clauses) == 10311  # Updated: unified parser implementation
+        assert len(cnf.clauses) == 10311
         assert cnf.nv == 2513
         assert all(isinstance(clause, list) for clause in cnf.clauses)
         assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
@@ -155,7 +157,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -176,7 +178,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -199,7 +201,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -223,7 +225,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -247,7 +249,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, parser_type="lark")
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -257,15 +259,15 @@ features
             os.unlink(temp_file)
 
 
-class TestBuilder:
-    """Test cases for the FeatureModelBuilder functionality."""
+class TestLarkBuilder:
+    """Test cases for the Lark FeatureModelBuilder functionality."""
 
     def test_builder_external_usage_and_feature_iteration(self):
         """Test that builder can be accessed externally and iterates through all features."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, parser_type="lark")
         builder = model.builder()
 
         # Test that builder can be used from outside

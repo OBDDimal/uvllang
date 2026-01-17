@@ -1,0 +1,240 @@
+// UVL (Universal Variability Language) Grammar for Lark
+// Ported from ANTLR4 grammar
+
+// Start rule
+?start: feature_model
+
+// Main structure
+feature_model: namespace? NEWLINE? includes? NEWLINE? imports? NEWLINE? features? NEWLINE? constraints?
+
+// Includes section
+includes: INCLUDE_KEY NEWLINE INDENT include_line* DEDENT
+include_line: language_level NEWLINE
+
+// Namespace
+namespace: NAMESPACE_KEY reference
+
+// Imports section
+imports: IMPORTS_KEY NEWLINE INDENT import_line* DEDENT
+import_line: reference (AS_KEY reference)? NEWLINE
+
+// Features section
+features: FEATURES_KEY NEWLINE INDENT feature DEDENT
+
+// Groups
+group: or_group
+     | alternative_group
+     | optional_group
+     | mandatory_group
+     | cardinality_group
+
+or_group: ORGROUP group_spec
+alternative_group: ALTERNATIVE group_spec
+optional_group: OPTIONAL group_spec
+mandatory_group: MANDATORY group_spec
+cardinality_group: CARDINALITY group_spec
+
+group_spec: NEWLINE INDENT feature+ DEDENT
+
+// Feature definition
+feature: feature_type? reference feature_cardinality? attributes? NEWLINE (INDENT group+ DEDENT)?
+
+feature_cardinality: CARDINALITY_KEY CARDINALITY
+
+// Attributes
+attributes: OPEN_BRACE (attribute (COMMA attribute)*)? CLOSE_BRACE
+
+attribute: value_attribute | constraint_attribute
+
+value_attribute: key value?
+key: id
+value: BOOLEAN | FLOAT | INTEGER | STRING | ID_NOT_STRICT | attributes | vector
+vector: OPEN_BRACK (value (COMMA value)*)? CLOSE_BRACK
+
+constraint_attribute: single_constraint_attribute
+                    | list_constraint_attribute
+
+single_constraint_attribute: CONSTRAINT_KEY constraint
+list_constraint_attribute: CONSTRAINTS_KEY constraint_list
+constraint_list: OPEN_BRACK (constraint (COMMA constraint)*)? CLOSE_BRACK
+
+// Constraints section
+constraints: CONSTRAINTS_KEY NEWLINE INDENT constraint_line* DEDENT
+constraint_line: constraint NEWLINE
+
+// Constraint expressions (with proper precedence)
+?constraint: equivalence_constraint
+
+equivalence_constraint: implication_constraint (EQUIVALENCE implication_constraint)*
+implication_constraint: or_constraint (IMPLICATION or_constraint)*
+or_constraint: and_constraint (OR and_constraint)*
+and_constraint: not_constraint (AND not_constraint)*
+
+not_constraint: NOT not_constraint    -> not_constraint_op
+              | constraint_atom
+
+constraint_atom: OPEN_PAREN constraint CLOSE_PAREN  -> parenthesis_constraint
+               | comparison                         -> equation_constraint
+               | reference                          -> literal_constraint
+
+// Comparisons (equations)
+comparison: comp_expression EQUAL comp_expression          -> equal_equation
+          | comp_expression LOWER comp_expression          -> lower_equation
+          | comp_expression GREATER comp_expression        -> greater_equation
+          | comp_expression LOWER_EQUALS comp_expression   -> lower_equals_equation
+          | comp_expression GREATER_EQUALS comp_expression -> greater_equals_equation
+          | comp_expression NOT_EQUALS comp_expression     -> not_equals_equation
+
+// Comparison expressions (superset of arithmetic expressions + references)
+?comp_expression: comp_additive
+
+comp_additive: comp_multiplicative ((ADD | SUB) comp_multiplicative)*
+
+comp_multiplicative: comp_primary ((MUL | DIV) comp_primary)*
+
+comp_primary: FLOAT                             -> float_literal_expression
+            | INTEGER                           -> integer_literal_expression
+            | STRING                            -> string_literal_expression
+            | aggregate_function                -> aggregate_function_expression
+            | reference                         -> literal_expression
+            | OPEN_PAREN comp_expression CLOSE_PAREN  -> bracket_expression
+
+// Arithmetic expressions (with proper precedence)
+?expression: additive_expression
+
+additive_expression: multiplicative_expression ((ADD | SUB) multiplicative_expression)*
+
+multiplicative_expression: primary_expression ((MUL | DIV) primary_expression)*
+
+primary_expression: FLOAT                              -> float_literal_expression
+                  | INTEGER                            -> integer_literal_expression
+                  | STRING                             -> string_literal_expression
+                  | aggregate_function                 -> aggregate_function_expression
+                  | reference                          -> literal_expression
+                  | OPEN_PAREN expression CLOSE_PAREN  -> bracket_expression
+
+// Aggregate functions
+aggregate_function: sum_aggregate_function       -> sum_aggregate_function_expression
+                  | avg_aggregate_function       -> avg_aggregate_function_expression
+                  | string_aggregate_function    -> string_aggregate_function_expression
+                  | numeric_aggregate_function   -> numeric_aggregate_function_expression
+
+sum_aggregate_function: SUM_KEY OPEN_PAREN (reference COMMA)? reference CLOSE_PAREN
+avg_aggregate_function: AVG_KEY OPEN_PAREN (reference COMMA)? reference CLOSE_PAREN
+
+string_aggregate_function: length_aggregate_function
+length_aggregate_function: LEN_KEY OPEN_PAREN reference CLOSE_PAREN
+
+numeric_aggregate_function: floor_aggregate_function
+                          | ceil_aggregate_function
+floor_aggregate_function: FLOOR_KEY OPEN_PAREN reference CLOSE_PAREN
+ceil_aggregate_function: CEIL_KEY OPEN_PAREN reference CLOSE_PAREN
+
+// References and identifiers
+reference: (id DOT)* id
+id: ID_STRICT | ID_NOT_STRICT
+
+// Feature types
+feature_type: STRING_KEY | INTEGER_KEY | BOOLEAN_KEY | REAL_KEY
+
+// Language levels
+language_level: major_level (DOT (minor_level | MUL))?
+major_level: BOOLEAN_KEY | ARITHMETIC_KEY
+minor_level: GROUP_CARDINALITY_KEY
+           | FEATURE_CARDINALITY_KEY
+           | AGGREGATE_KEY
+           | STRING_CONSTRAINTS_KEY
+
+// ================== TERMINALS (Lexer) ==================
+
+// Special indentation tokens
+INDENT: "<INDENT>"
+DEDENT: "<DEDENT>"
+
+// Keywords
+INCLUDE_KEY: "include"
+FEATURES_KEY: "features"
+IMPORTS_KEY: "imports"
+NAMESPACE_KEY: "namespace"
+AS_KEY: "as"
+CONSTRAINT_KEY: "constraint"
+CONSTRAINTS_KEY: "constraints"
+CARDINALITY_KEY: "cardinality"
+STRING_KEY: "String"
+BOOLEAN_KEY: "Boolean"
+INTEGER_KEY: "Integer"
+REAL_KEY: "Real"
+LEN_KEY: "len"
+SUM_KEY: "sum"
+AVG_KEY: "avg"
+FLOOR_KEY: "floor"
+CEIL_KEY: "ceil"
+ARITHMETIC_KEY: "Arithmetic"
+GROUP_CARDINALITY_KEY: "group-cardinality"
+FEATURE_CARDINALITY_KEY: "feature-cardinality"
+AGGREGATE_KEY: "aggregate-function"
+STRING_CONSTRAINTS_KEY: "string-constraints"
+
+// Group types
+ORGROUP: "or"
+ALTERNATIVE: "alternative"
+OPTIONAL: "optional"
+MANDATORY: "mandatory"
+
+// Cardinality
+CARDINALITY: "[" INTEGER (".." (INTEGER | "*"))? "]"
+
+// Logical operators
+NOT: "!"
+AND: "&"
+OR: "|"
+EQUIVALENCE: "<=>"
+IMPLICATION: "=>"
+
+// Comparison operators
+EQUAL: "=="
+LOWER: "<"
+LOWER_EQUALS: "<="
+GREATER: ">"
+GREATER_EQUALS: ">="
+NOT_EQUALS: "!="
+
+// Arithmetic operators
+DIV: "/"
+MUL: "*"
+ADD: "+"
+SUB: "-"
+
+// Delimiters
+OPEN_PAREN: "("
+CLOSE_PAREN: ")"
+OPEN_BRACK: "["
+CLOSE_BRACK: "]"
+OPEN_BRACE: "{"
+CLOSE_BRACE: "}"
+
+// Literals
+FLOAT: /-?[0-9]*\.[0-9]+/
+INTEGER: /0|-?[1-9][0-9]*/
+BOOLEAN: "true" | "false"
+
+// Punctuation
+COMMA: ","
+DOT: "."
+
+// Identifiers
+ID_NOT_STRICT: /"[^\r\n".]+"/
+ID_STRICT: /[a-zA-Z]([a-zA-Z0-9_#§%?\\'äüöß;])*/
+
+// String literals
+STRING: /"[^\"\r\n]*"/ | /'[^'\r\n]*'/
+
+// Newlines and whitespace
+NEWLINE: /\r?\n|\r/
+
+// Comments and whitespace (to ignore)
+COMMENT: /\/\/[^\r\n\f]*/
+       | /\/\*.*?\*\//s
+
+%ignore COMMENT
+%ignore /[ \t]+/

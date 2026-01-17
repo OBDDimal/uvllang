@@ -8,6 +8,28 @@ from sympy import symbols, to_cnf, Or, And, Not, Implies
 from sympy.logic.boolalg import BooleanFunction
 from pysat.formula import CNF
 
+# Lark imports (required)
+from uvllang.uvl_lark_lexer import UVLIndentationLexer
+from uvllang.uvl_lark_parser import (
+    load_lark_parser,
+    FeatureExtractor as LarkFeatureExtractor,
+    FeatureModelBuilder as LarkFeatureModelBuilder,
+)
+from lark import Tree
+
+# ANTLR imports (optional)
+try:
+    from antlr4 import CommonTokenStream, FileStream
+    from uvllang.uvl_custom_lexer import uvl_custom_lexer
+    from uvllang.uvl_python_parser import uvl_python_parser
+    from uvllang.uvl_python_parser_listener import uvl_python_parserListener
+    from antlr4.error.ErrorListener import ErrorListener
+    from antlr4.tree.Tree import ParseTreeWalker
+
+    ANTLR_AVAILABLE = True
+except ImportError:
+    ANTLR_AVAILABLE = False
+
 
 class CustomErrorListener(ErrorListener):
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
@@ -37,8 +59,15 @@ class FeatureConstraintExtractor(uvl_python_parserListener):
     def enterConstraintLine(self, ctx):
         constraint_text = ctx.constraint().getText()
 
-        # Check if this is an arithmetic constraint (contains comparison operators)
-        if any(op in constraint_text for op in ["==", "!=", "<", ">", "<=", ">="]):
+        # Check if this is an arithmetic constraint (has comparison operators)
+        # Note: We must check for boolean operators first to avoid false matches
+        # (e.g., ">=" matches within "=>" or "<=>" matches within "<=")
+        has_boolean_op = any(op in constraint_text for op in ["=>", "<=>"])
+        has_arithmetic_op = any(
+            op in constraint_text for op in ["==", "!=", "<=", ">=", "<", ">"]
+        )
+
+        if has_arithmetic_op and not has_boolean_op:
             self.arithmetic_constraints.append(constraint_text)
         else:
             # Boolean constraint (logical operators only)
@@ -139,10 +168,20 @@ class FeatureModelBuilder(uvl_python_parserListener):
 
 
 class UVL:
-    def __init__(self, from_file=None):
+    def __init__(self, from_file=None, parser_type="lark"):
         if from_file is None:
             raise ValueError("from_file parameter is required")
 
+        if parser_type not in ["antlr", "lark"]:
+            raise ValueError("parser_type must be 'antlr' or 'lark'")
+
+        if parser_type == "antlr" and not ANTLR_AVAILABLE:
+            raise ImportError(
+                "ANTLR parser requested but ANTLR dependencies not available. "
+                "Install with: pip install uvllang[antlr]"
+            )
+
+        self._parser_type = parser_type
         self._file_path = from_file
         self._tree = None
         self._features = None
@@ -152,17 +191,30 @@ class UVL:
         self._parse_file()
 
     def _parse_file(self):
-        input_stream = FileStream(self._file_path)
-        lexer = uvl_custom_lexer(input_stream)
-        lexer.removeErrorListeners()
-        lexer.addErrorListener(CustomErrorListener())
+        if self._parser_type == "antlr":
+            input_stream = FileStream(self._file_path)
+            lexer = uvl_custom_lexer(input_stream)
+            lexer.removeErrorListeners()
+            lexer.addErrorListener(CustomErrorListener())
 
-        stream = CommonTokenStream(lexer)
-        parser = uvl_python_parser(stream)
-        parser.removeErrorListeners()
-        parser.addErrorListener(CustomErrorListener())
+            stream = CommonTokenStream(lexer)
+            parser = uvl_python_parser(stream)
+            parser.removeErrorListeners()
+            parser.addErrorListener(CustomErrorListener())
 
-        self._tree = parser.featureModel()
+            self._tree = parser.featureModel()
+        else:  # lark
+            # Read the file
+            with open(self._file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Preprocess with indentation lexer
+            lexer = UVLIndentationLexer()
+            processed_content = lexer.process(content)
+
+            # Parse with Lark
+            self._parser = load_lark_parser()
+            self._tree = self._parser.parse(processed_content)
 
     @property
     def tree(self):
@@ -171,10 +223,15 @@ class UVL:
     @property
     def features(self):
         if self._features is None:
-            extractor = FeatureConstraintExtractor()
-            walker = ParseTreeWalker()
-            walker.walk(extractor, self._tree)
-            self._features = extractor.features
+            if self._parser_type == "antlr":
+                extractor = FeatureConstraintExtractor()
+                walker = ParseTreeWalker()
+                walker.walk(extractor, self._tree)
+                self._features = extractor.features
+            else:  # lark
+                extractor = LarkFeatureExtractor()
+                extractor.visit(self._tree)
+                self._features = extractor.features
         return self._features
 
     @property
@@ -186,30 +243,45 @@ class UVL:
     def boolean_constraints(self):
         """Return only boolean constraints that can be converted to CNF."""
         if self._boolean_constraints is None:
-            extractor = FeatureConstraintExtractor()
-            walker = ParseTreeWalker()
-            walker.walk(extractor, self._tree)
-            self._boolean_constraints = extractor.boolean_constraints
+            if self._parser_type == "antlr":
+                extractor = FeatureConstraintExtractor()
+                walker = ParseTreeWalker()
+                walker.walk(extractor, self._tree)
+                self._boolean_constraints = extractor.boolean_constraints
+            else:  # lark
+                extractor = LarkFeatureExtractor()
+                extractor.visit(self._tree)
+                self._boolean_constraints = extractor.boolean_constraints
         return self._boolean_constraints
 
     @property
     def arithmetic_constraints(self):
         """Return arithmetic constraints that cannot be directly converted to CNF."""
         if self._arithmetic_constraints is None:
-            extractor = FeatureConstraintExtractor()
-            walker = ParseTreeWalker()
-            walker.walk(extractor, self._tree)
-            self._arithmetic_constraints = extractor.arithmetic_constraints
+            if self._parser_type == "antlr":
+                extractor = FeatureConstraintExtractor()
+                walker = ParseTreeWalker()
+                walker.walk(extractor, self._tree)
+                self._arithmetic_constraints = extractor.arithmetic_constraints
+            else:  # lark
+                extractor = LarkFeatureExtractor()
+                extractor.visit(self._tree)
+                self._arithmetic_constraints = extractor.arithmetic_constraints
         return self._arithmetic_constraints
 
     @property
     def feature_types(self):
         """Return feature type information (feature_name -> type)."""
         if self._feature_types is None:
-            extractor = FeatureConstraintExtractor()
-            walker = ParseTreeWalker()
-            walker.walk(extractor, self._tree)
-            self._feature_types = extractor.feature_types
+            if self._parser_type == "antlr":
+                extractor = FeatureConstraintExtractor()
+                walker = ParseTreeWalker()
+                walker.walk(extractor, self._tree)
+                self._feature_types = extractor.feature_types
+            else:  # lark
+                extractor = LarkFeatureExtractor()
+                extractor.visit(self._tree)
+                self._feature_types = extractor.feature_types
         return self._feature_types
 
     def builder(self):
@@ -218,10 +290,15 @@ class UVL:
         Returns:
             FeatureModelBuilder: A builder with the feature hierarchy extracted from this model.
         """
-        builder = FeatureModelBuilder()
-        walker = ParseTreeWalker()
-        walker.walk(builder, self._tree)
-        return builder
+        if self._parser_type == "antlr":
+            builder = FeatureModelBuilder()
+            walker = ParseTreeWalker()
+            walker.walk(builder, self._tree)
+            return builder
+        else:  # lark
+            builder = LarkFeatureModelBuilder()
+            builder.visit(self._tree)
+            return builder
 
     def to_cnf(self, verbose_info=True):
         """Convert the feature model to CNF (Conjunctive Normal Form).
