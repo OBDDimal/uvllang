@@ -1,8 +1,8 @@
 """
-Tests for the Lark-based UVL Parser implementation.
+Tests for the UVL Parser implementation.
 
-These tests verify that the Lark grammar correctly parses UVL files
-and maintains compatibility with the ANTLR implementation.
+These tests verify that both Lark and ANTLR parsers correctly parse UVL files
+and produce consistent results.
 """
 
 import pytest
@@ -11,33 +11,127 @@ import tempfile
 from uvllang import UVL
 
 
-@pytest.mark.parametrize("use_antlr", [False, True])
-class TestLarkUVLParser:
-    """Test cases for Lark-based UVL parsing functionality."""
+# Test data for all example files
+EXAMPLE_FILES = [
+    {
+        "file": "automotive01.uvl",
+        "features": 2513,
+        "bool_constraints": 2833,
+        "arith_constraints": 0,
+        "cnf_clauses": 10311,
+        "has_attributes": True,
+    },
+    {
+        "file": "eshop.uvl",
+        "features": 173,
+        "bool_constraints": 0,
+        "arith_constraints": 0,
+        "cnf_clauses": 289,
+        "has_attributes": False,
+    },
+    {
+        "file": "expressions.uvl",
+        "features": 3,
+        "bool_constraints": 0,
+        "arith_constraints": 24,
+        "cnf_clauses": 4,
+        "has_attributes": True,
+    },
+    {
+        "file": "aggregate.uvl",
+        "features": 3,
+        "bool_constraints": 0,
+        "arith_constraints": 2,
+        "cnf_clauses": 3,
+        "has_attributes": True,
+        "has_aggregates": True,
+    },
+    {
+        "file": "aggregateFunctions.uvl",
+        "features": 3,
+        "bool_constraints": 0,
+        "arith_constraints": 2,
+        "cnf_clauses": 3,
+        "has_attributes": True,
+        "has_aggregates": True,
+    },
+    {
+        "file": "lengthAggregation.uvl",
+        "features": 3,
+        "bool_constraints": 0,
+        "arith_constraints": 3,
+        "cnf_clauses": 3,
+        "has_types": True,
+        "has_len_function": True,
+    },
+    {
+        "file": "feature-cardinality.uvl",
+        "features": 4,
+        "bool_constraints": 0,
+        "arith_constraints": 0,
+        "cnf_clauses": 8,
+        "has_cardinality": True,
+    },
+]
 
-    def test_parse_automotive01_uvl(self, use_antlr):
-        """Test parsing the automotive01 UVL file."""
+
+@pytest.mark.parametrize("use_antlr", [False, True])
+@pytest.mark.parametrize(
+    "example", EXAMPLE_FILES, ids=[e["file"] for e in EXAMPLE_FILES]
+)
+class TestUVLParsing:
+    """Consolidated tests for UVL file parsing."""
+
+    def test_parse_file(self, example, use_antlr):
+        """Test that file parses successfully with expected feature count."""
         example_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
+            os.path.dirname(__file__), "..", "examples", example["file"]
         )
         model = UVL(from_file=example_file, use_antlr=use_antlr)
 
-        assert model.tree is not None
-        assert len(model.features) == 2513
+        assert model.tree is not None, f"{example['file']} should parse successfully"
+        assert (
+            len(model.features) == example["features"]
+        ), f"{example['file']} should have {example['features']} features"
 
-    def test_parse_eshop_uvl(self, use_antlr):
-        """Test parsing the eshop UVL file."""
-        eshop_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "eshop.uvl"
+    def test_constraint_classification(self, example, use_antlr):
+        """Test that constraints are classified correctly."""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, use_antlr=use_antlr)
 
-        assert model.tree is not None
-        assert len(model.features) == 173
-        assert "eShop" in model.features
+        assert (
+            len(model.boolean_constraints) == example["bool_constraints"]
+        ), f"{example['file']} should have {example['bool_constraints']} boolean constraints"
+        assert (
+            len(model.arithmetic_constraints) == example["arith_constraints"]
+        ), f"{example['file']} should have {example['arith_constraints']} arithmetic constraints"
 
-    def test_parse_simple_uvl(self, use_antlr):
-        """Test parsing a simple UVL file."""
+    def test_cnf_conversion(self, example, use_antlr):
+        """Test CNF conversion"""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", example["file"]
+        )
+        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        cnf = model.to_cnf()
+
+        assert (
+            len(cnf.clauses) == example["cnf_clauses"]
+        ), f"{example['file']} should produce {example['cnf_clauses']} CNF clauses"
+        assert (
+            cnf.nv == example["features"]
+        ), f"CNF should have {example['features']} variables"
+        assert all(isinstance(clause, list) for clause in cnf.clauses)
+        assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
+
+
+@pytest.mark.parametrize("use_antlr", [False, True])
+class TestUVLFeatures:
+    """Test specific UVL language features."""
+
+    def test_parse_simple_inline_uvl(self, use_antlr):
+        """Test parsing a simple inline UVL definition."""
         uvl_content = """namespace TestNS
 
 features
@@ -80,66 +174,6 @@ features
         with pytest.raises(FileNotFoundError):
             UVL(from_file="nonexistent_file.uvl", use_antlr=use_antlr)
 
-    def test_constraint_classification_eshop(self, use_antlr):
-        """Test that eshop.uvl has only arithmetic constraints (no boolean)."""
-        eshop_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "eshop.uvl"
-        )
-        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
-
-        assert (
-            len(model.arithmetic_constraints) == 0
-        ), "eshop should have 0 arithmetic constraints"
-        assert (
-            len(model.boolean_constraints) == 0
-        ), "eshop should have 0 boolean constraints"
-
-    def test_constraint_classification_automotive01(self, use_antlr):
-        """Test that automotive01.uvl has 2833 boolean constraints."""
-        automotive_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
-        )
-        model = UVL(from_file=automotive_file, use_antlr=use_antlr)
-
-        assert (
-            len(model.boolean_constraints) == 2833
-        ), "automotive01 should have 2833 boolean constraints"
-        assert (
-            len(model.arithmetic_constraints) == 0
-        ), "automotive01 should have 0 arithmetic constraints"
-
-        # Verify that implication constraints are correctly classified as boolean
-        implication_constraints = [c for c in model.boolean_constraints if "=>" in c]
-        assert (
-            len(implication_constraints) > 0
-        ), "Should have implication (=>) constraints"
-
-    def test_cnf_eshop(self, use_antlr):
-        """Test CNF conversion for eshop.uvl."""
-        eshop_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "eshop.uvl"
-        )
-        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
-        cnf = model.to_cnf()
-
-        assert len(cnf.clauses) == 289
-        assert cnf.nv == 173
-        assert all(isinstance(clause, list) for clause in cnf.clauses)
-        assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
-
-    def test_cnf_automotive01(self, use_antlr):
-        """Test CNF conversion for automotive01.uvl."""
-        auto_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
-        )
-        model = UVL(from_file=auto_file, use_antlr=use_antlr)
-        cnf = model.to_cnf()
-
-        assert len(cnf.clauses) == 10311
-        assert cnf.nv == 2513
-        assert all(isinstance(clause, list) for clause in cnf.clauses)
-        assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
-
     def test_cnf_root_constraint(self, use_antlr):
         """Test that CNF includes root feature constraint."""
         uvl_content = """namespace Test
@@ -156,7 +190,6 @@ features
         try:
             model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
-
             assert [1] in cnf.clauses
         finally:
             os.unlink(temp_file)
@@ -177,7 +210,6 @@ features
         try:
             model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
-
             assert [1] in cnf.clauses
             assert [-1, 2] in cnf.clauses
             assert [-2, 1] in cnf.clauses
@@ -200,7 +232,6 @@ features
         try:
             model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
-
             assert [1] in cnf.clauses
             assert [-2, 1] in cnf.clauses
             assert [-1, 2] not in cnf.clauses
@@ -224,7 +255,6 @@ features
         try:
             model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
-
             assert [1] in cnf.clauses
             assert [-1, 2, 3] in cnf.clauses
             assert [-2, -3] in cnf.clauses
@@ -248,7 +278,6 @@ features
         try:
             model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
-
             assert [1] in cnf.clauses
             assert [-1, 2, 3] in cnf.clauses
             assert [-2, -3] not in cnf.clauses
@@ -275,3 +304,40 @@ features
         # All model features should be in the builder's hierarchy
         assert builder_features == model_features
         assert len(builder_features) == 173
+
+    def test_implication_constraints_automotive01(self, use_antlr):
+        """Test that implication constraints are correctly classified as boolean."""
+        automotive_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
+        )
+        model = UVL(from_file=automotive_file, use_antlr=use_antlr)
+
+        # Verify that implication constraints are correctly classified as boolean
+        implication_constraints = [c for c in model.boolean_constraints if "=>" in c]
+        assert (
+            len(implication_constraints) > 0
+        ), "Should have implication (=>) constraints"
+
+    def test_aggregate_functions_detected(self, use_antlr):
+        """Test that aggregate functions are detected in constraints."""
+        aggregate_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "aggregate.uvl"
+        )
+        model = UVL(from_file=aggregate_file, use_antlr=use_antlr)
+
+        constraints = model.arithmetic_constraints
+        assert any("sum" in c for c in constraints), "Should detect sum() aggregate"
+        assert any("avg" in c for c in constraints), "Should detect avg() aggregate"
+
+    def test_attribute_extraction(self, use_antlr):
+        """Test that feature attributes are extracted correctly."""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "expressions.uvl"
+        )
+        model = UVL(from_file=example_file, use_antlr=use_antlr)
+
+        # Check that attributes are referenced in constraints
+        constraints_text = " ".join(model.arithmetic_constraints)
+        assert "B.Price" in constraints_text
+        assert "B.Fun" in constraints_text
+        assert "C.Fun" in constraints_text

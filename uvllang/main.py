@@ -1,6 +1,7 @@
+import re
 import os
-from sympy import symbols, to_cnf, Or, And, Not, Implies
-from sympy.logic.boolalg import BooleanFunction
+
+from sympy import symbols, to_cnf, Or, And, Not
 from pysat.formula import CNF
 
 from lark import Tree, Token, Lark
@@ -110,6 +111,11 @@ class UVL:
     def feature_types(self):
         """Feature type annotations."""
         return self._extractor.feature_types
+
+    @property
+    def feature_attributes(self):
+        """Feature attributes with their values."""
+        return self._extractor.feature_attributes
 
     def builder(self):
         """Feature hierarchy builder."""
@@ -235,6 +241,367 @@ class UVL:
 
         return literals
 
+    def to_smt(self):
+        """Convert feature model to SMT-LIB 2 format."""
+        builder = self.builder()
+        lines = []
+
+        # Collect string-typed features
+        string_features = set()
+        for feature in self.features:
+            if (
+                feature in self.feature_types
+                and "String" in self.feature_types[feature]
+            ):
+                string_features.add(feature)
+
+        # Declare boolean variables for features
+        lines.append("; Feature declarations")
+        for feature in self.features:
+            lines.append(f"(declare-const {feature} Bool)")
+
+        # Declare string variables for String-typed features
+        if string_features:
+            lines.append("")
+            lines.append("; String feature values")
+            for feature in sorted(string_features):
+                lines.append(f"(declare-const {feature}_val String)")
+
+        # Declare integer/real variables for attributes
+        lines.append("")
+        lines.append("; Attribute declarations")
+        attribute_vars = set()
+
+        # Collect attributes from arithmetic constraints
+        for constraint in self.arithmetic_constraints:
+            expanded = self._expand_aggregates(constraint)
+            # Extract attribute references (e.g., B.Price, C.Fun)
+
+            attrs = re.findall(r"([A-Za-z_]\w*\.[A-Za-z_]\w*)", expanded)
+            attribute_vars.update(attrs)
+
+        # Also collect all attributes from feature declarations
+        for feature, attrs in self.feature_attributes.items():
+            for attr_name in attrs.keys():
+                attribute_vars.add(f"{feature}.{attr_name}")
+
+        for attr in sorted(attribute_vars):
+            lines.append(f"(declare-const {attr} Int)")
+
+        # Attribute value constraints from feature declarations
+        if self.feature_attributes:
+            lines.append("")
+            lines.append("; Attribute value constraints")
+            for feature, attrs in sorted(self.feature_attributes.items()):
+                for attr_name, attr_value in sorted(attrs.items()):
+                    attr_ref = f"{feature}.{attr_name}"
+                    lines.append(f"(assert (= {attr_ref} {attr_value}))")
+
+        # Root feature constraint
+        lines.append("")
+        lines.append("; Root feature must be selected")
+        if builder.root_feature:
+            lines.append(f"(assert {builder.root_feature})")
+
+        # Hierarchy constraints
+        lines.append("")
+        lines.append("; Hierarchy constraints")
+        for feature, info in builder.feature_hierarchy.items():
+            for child, child_type in info["children"]:
+                # Child implies parent
+                lines.append(f"(assert (=> {child} {feature}))")
+                # Mandatory: parent implies child
+                if child_type == "mandatory":
+                    lines.append(f"(assert (=> {feature} {child}))")
+
+            for group_type, group_members in info["groups"]:
+                if group_type == "or":
+                    # Parent implies at least one child
+                    or_clause = " ".join(group_members)
+                    lines.append(f"(assert (=> {feature} (or {or_clause})))")
+
+                elif group_type == "xor":
+                    # Parent implies exactly one child
+                    or_clause = " ".join(group_members)
+                    lines.append(f"(assert (=> {feature} (or {or_clause})))")
+                    # At most one (mutual exclusion)
+                    for i, m1 in enumerate(group_members):
+                        for m2 in group_members[i + 1 :]:
+                            lines.append(f"(assert (not (and {m1} {m2})))")
+
+        # Boolean constraints
+        if self.boolean_constraints:
+            lines.append("")
+            lines.append("; Boolean constraints")
+            for constraint in self.boolean_constraints:
+                smt_constraint = self._boolean_to_smt(constraint)
+                lines.append(f"(assert {smt_constraint})")
+
+        # Arithmetic constraints
+        if self.arithmetic_constraints:
+            lines.append("")
+            lines.append("; Arithmetic constraints")
+            for constraint in self.arithmetic_constraints:
+                smt_constraint = self._arithmetic_to_smt(constraint)
+                lines.append(f"(assert {smt_constraint})")
+
+        lines.append("")
+        lines.append("(check-sat)")
+        lines.append("(get-model)")
+
+        return "\n".join(lines)
+
+    def _boolean_to_smt(self, constraint):
+        """Convert boolean constraint to SMT-LIB format."""
+        result = constraint
+        result = result.replace("!", "not ")
+        result = result.replace("&", "and")
+        result = result.replace("|", "or")
+        result = result.replace("=>", "=>")
+        result = result.replace("<=>", "=")
+        # Add parentheses for operators
+        result = result.replace(" and ", " (and ")
+        result = result.replace(" or ", " (or ")
+        result = result.replace("not ", "(not ")
+        # Balance parentheses (simplified)
+        return f"({result})"
+
+    def _arithmetic_to_smt(self, constraint):
+        """Convert arithmetic constraint to SMT-LIB format."""
+
+        # First expand aggregate functions
+        constraint = self._expand_aggregates(constraint)
+
+        # Find the comparison operator and split
+        comp_ops = ["==", "!=", "<=", ">=", "<", ">"]
+        for op in comp_ops:
+            if op in constraint:
+                parts = constraint.split(op, 1)
+                left = parts[0].strip()
+                right = parts[1].strip()
+
+                smt_op = "=" if op == "==" else "distinct" if op == "!=" else op
+                left_smt = self._expr_to_smt(left)
+                right_smt = self._expr_to_smt(right)
+
+                return f"({smt_op} {left_smt} {right_smt})"
+
+        return constraint
+
+    def _expand_aggregates(self, constraint):
+        """Expand aggregate functions like sum(attr), avg(attr), and len(feature).
+
+        For optional features, generates conditional SMT expressions using ite:
+        - sum(Price) with optional features B, C: A.Price + (ite B B.Price 0) + (ite C C.Price 0)
+        - avg(Price): sum / count_of_selected_features
+        - len(feature): (str.len feature_val)
+
+        Returns the expanded constraint with SMT ite expressions in prefix notation.
+        """
+
+        agg_pattern = r"(sum|avg|len)\(([A-Za-z_]\w*)\)"
+
+        def expand_aggregate(match):
+            func, attr_name = match.group(1), match.group(2)
+
+            # String length function
+            if func == "len":
+                return f"strlen_{attr_name}"
+
+            # Build list of attribute references with conditionals for optional features
+            feature_attrs = []
+            for feature in self.features:
+                if (
+                    feature in self.feature_attributes
+                    and attr_name in self.feature_attributes[feature]
+                ):
+                    attr_ref = f"{feature}.{attr_name}"
+                    if self._is_feature_optional(feature):
+                        # Optional: include only if selected
+                        feature_attrs.append(f"(ite {feature} {attr_ref} 0)")
+                    else:
+                        # Mandatory: always include
+                        feature_attrs.append(attr_ref)
+
+            if not feature_attrs:
+                # Fallback for undeclared attributes
+                feature_attrs = [f"{f}.{attr_name}" for f in self.features]
+
+            # Generate expression based on aggregate type
+            if func == "sum":
+                return " + ".join(feature_attrs)
+
+            elif func == "avg":
+                sum_expr = " + ".join(feature_attrs)
+                # Count only selected features
+                count_terms = []
+                for feature in self.features:
+                    if (
+                        feature in self.feature_attributes
+                        and attr_name in self.feature_attributes[feature]
+                    ):
+                        if self._is_feature_optional(feature):
+                            count_terms.append(f"(ite {feature} 1 0)")
+                        else:
+                            count_terms.append("1")
+
+                count_expr = (
+                    " + ".join(count_terms) if count_terms else str(len(feature_attrs))
+                )
+                return f"(({sum_expr}) / ({count_expr}))"
+
+            return match.group(0)
+
+        return re.sub(agg_pattern, expand_aggregate, constraint)
+
+    def _is_feature_optional(self, feature_name):
+        """Determine if a feature is optional based on feature hierarchy.
+
+        Returns:
+            bool: True if feature is optional, False if mandatory or root
+        """
+        builder = self.builder()
+
+        if feature_name == builder.root_feature:
+            return False
+
+        for parent, info in builder.feature_hierarchy.items():
+            for child, child_type in info.get("children", []):
+                if child == feature_name:
+                    return child_type == "optional"
+
+        return True  # Default to optional for safety
+
+    def _expr_to_smt(self, expr):
+        """Convert infix arithmetic expression to SMT-LIB 2.0 prefix notation.
+
+        Handles:
+        - Arithmetic operators: +, -, *, /
+        - Parentheses and operator precedence
+        - SMT prefix expressions (ite, str.len, etc.) - preserved as-is
+        - String length: strlen_feature -> (str.len feature_val)
+
+        SMT prefix expressions like (ite cond then else) are recognized by checking
+        if the first token after '(' is a known SMT function.
+
+        Args:
+            expr: Expression string in mixed infix/prefix notation
+
+        Returns:
+            Expression string in pure SMT-LIB prefix notation
+        """
+
+        expr = expr.strip()
+
+        # Check if this is an SMT prefix expression (starts with known SMT function)
+        if expr.startswith("("):
+            # Extract first token after opening paren
+            match = re.match(r"\(([a-z_]+)\s", expr)
+            if match and match.group(1) in [
+                "ite",
+                "str.len",
+                "and",
+                "or",
+                "not",
+                "str.++",
+            ]:
+                # This is already an SMT prefix form, recursively convert its arguments
+                return self._convert_smt_prefix_args(expr)
+
+        # Remove outer parentheses if they wrap the entire expression
+        if expr.startswith("(") and expr.endswith(")"):
+            depth = 0
+            for i, c in enumerate(expr):
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                if depth == 0 and i < len(expr) - 1:
+                    break
+            if i == len(expr) - 1:
+                return self._expr_to_smt(expr[1:-1])
+
+        # Parse infix operators with proper precedence
+        # Track depth to skip over SMT prefix expressions
+        depth = 0
+
+        # Handle addition and subtraction (lowest precedence)
+        for i in range(len(expr) - 1, -1, -1):
+            if expr[i] == ")":
+                depth += 1
+            elif expr[i] == "(":
+                depth -= 1
+            elif depth == 0 and expr[i] in ["+", "-"] and i > 0:
+                left = self._expr_to_smt(expr[:i].strip())
+                right = self._expr_to_smt(expr[i + 1 :].strip())
+                return f"({expr[i]} {left} {right})"
+
+        # Handle multiplication and division (higher precedence)
+        depth = 0
+        for i in range(len(expr) - 1, -1, -1):
+            if expr[i] == ")":
+                depth += 1
+            elif expr[i] == "(":
+                depth -= 1
+            elif depth == 0 and expr[i] in ["*", "/"]:
+                left = self._expr_to_smt(expr[:i].strip())
+                right = self._expr_to_smt(expr[i + 1 :].strip())
+                return f"({expr[i]} {left} {right})"
+
+        # Handle string length function
+        if expr.startswith("strlen_"):
+            feature = expr[7:]
+            if (
+                feature in self.feature_types
+                and "String" in self.feature_types[feature]
+            ):
+                return f"(str.len {feature}_val)"
+            return f"(str.len {feature})"
+
+        # Base case: atomic expression (number, variable, or complete SMT prefix form)
+        return expr
+
+    def _convert_smt_prefix_args(self, expr):
+        """Recursively convert arguments inside SMT prefix expressions.
+
+        For example: (ite B B.Price + A.Price 0) -> (ite B (+ B.Price A.Price) 0)
+        """
+
+        # Match: (function arg1 arg2 ...)
+        match = re.match(r"\(([a-z_]+)\s+(.+)\)$", expr, re.DOTALL)
+        if not match:
+            return expr
+
+        func = match.group(1)
+        args_str = match.group(2).strip()
+
+        # Split arguments, respecting nested parentheses
+        args = []
+        current_arg = []
+        depth = 0
+
+        for char in args_str:
+            if char == "(":
+                depth += 1
+                current_arg.append(char)
+            elif char == ")":
+                depth -= 1
+                current_arg.append(char)
+            elif char == " " and depth == 0:
+                if current_arg:
+                    args.append("".join(current_arg))
+                    current_arg = []
+            else:
+                current_arg.append(char)
+
+        if current_arg:
+            args.append("".join(current_arg))
+
+        # Recursively convert each argument
+        converted_args = [self._expr_to_smt(arg) for arg in args]
+
+        return f"({func} {' '.join(converted_args)})"
+
 
 # =============================================================================
 # Parser Implementation Classes
@@ -249,11 +616,18 @@ class BaseFeatureExtractor:
         self.boolean_constraints = []
         self.arithmetic_constraints = []
         self.feature_types = {}
+        self.feature_attributes = {}  # {feature: {attr_name: value}}
 
     def add_feature(self, feature_name, feature_type=None):
         self.features.append(feature_name)
         if feature_type:
             self.feature_types[feature_name] = feature_type
+
+    def add_attribute(self, feature_name, attr_name, attr_value):
+        """Add an attribute value for a feature."""
+        if feature_name not in self.feature_attributes:
+            self.feature_attributes[feature_name] = {}
+        self.feature_attributes[feature_name][attr_name] = attr_value
 
     def add_constraint(self, constraint_text):
         has_boolean_op = any(op in constraint_text for op in ["=>", "<=>"])
@@ -283,6 +657,7 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
                 self.visit(child)
 
     def _visit_feature(self, tree):
+        feature_name = None
         for child in tree.children:
             if isinstance(child, Tree) and child.data == "reference":
                 feature_name = _get_text(child)
@@ -293,6 +668,32 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
                         self.feature_types[feature_name] = _get_text(sibling)
                 break
 
+        # Extract attributes
+        if feature_name:
+            for child in tree.children:
+                if isinstance(child, Tree) and child.data == "attributes":
+                    self._extract_attributes(feature_name, child)
+
+    def _extract_attributes(self, feature_name, attrs_tree):
+        """Extract attribute key-value pairs from attributes tree."""
+        for child in attrs_tree.children:
+            if isinstance(child, Tree) and child.data == "attribute":
+                # Look for value_attribute
+                for subchild in child.children:
+                    if (
+                        isinstance(subchild, Tree)
+                        and subchild.data == "value_attribute"
+                    ):
+                        key = None
+                        value = None
+                        for item in subchild.children:
+                            if isinstance(item, Tree) and item.data == "key":
+                                key = _get_text(item)
+                            elif isinstance(item, Tree) and item.data == "value":
+                                value = _get_text(item)
+                        if key and value:
+                            self.add_attribute(feature_name, key, value)
+
     def _visit_constraint_line(self, tree):
         self.add_constraint(_get_text(tree))
 
@@ -300,11 +701,29 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
 class AntlrFeatureExtractor(BaseFeatureExtractor, uvl_python_parserListener):
     """ANTLR-specific feature extractor."""
 
+    def __init__(self):
+        super().__init__()
+        self._current_feature = None
+
     def enterFeature(self, ctx):
         if ctx.reference():
             feature_name = ctx.reference().getText()
+            self._current_feature = feature_name
             feature_type = ctx.featureType().getText() if ctx.featureType() else None
             self.add_feature(feature_name, feature_type)
+
+    def exitFeature(self, ctx):
+        self._current_feature = None
+
+    def enterValueAttribute(self, ctx):
+        """Extract value attributes for the current feature."""
+        if not self._current_feature:
+            return
+
+        if ctx.key() and ctx.value():
+            key = ctx.key().getText()
+            value = ctx.value().getText()
+            self.add_attribute(self._current_feature, key, value)
 
     def enterConstraintLine(self, ctx):
         self.add_constraint(ctx.constraint().getText())

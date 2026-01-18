@@ -181,8 +181,8 @@ ALTERNATIVE: "alternative"
 OPTIONAL: "optional"
 MANDATORY: "mandatory"
 
-// Cardinality
-CARDINALITY: "[" INTEGER (".." (INTEGER | "*"))? "]"
+// Cardinality - must match before OPEN_BRACK
+CARDINALITY: /\[[0-9]+(\.\.[0-9]+|\.\.\*)?\]/
 
 // Logical operators
 NOT: "!"

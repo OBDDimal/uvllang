@@ -9,7 +9,7 @@ import argparse
 from uvllang.main import UVL
 
 
-def main():
+def uvl2cnf():
     parser = argparse.ArgumentParser(
         description="Convert a UVL feature model to CNF in DIMACS format.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -48,10 +48,10 @@ Examples:
     args = parser.parse_args()
 
     # Determine which parser to use (Lark is default)
-    parser_type = "antlr" if args.antlr else "lark"
+    use_antlr = args.antlr
 
     if args.verbose:
-        print(f"Using {parser_type.upper()} parser")
+        print(f"Using {'ANTLR' if use_antlr else 'Lark'} parser")
 
     uvl_file = args.uvl_file
 
@@ -66,7 +66,7 @@ Examples:
         output_file = os.path.splitext(basename)[0] + ".dimacs"
 
     try:
-        model = UVL(from_file=uvl_file, parser_type=parser_type)
+        model = UVL(from_file=uvl_file, use_antlr=use_antlr)
 
         if args.verbose:
             if model.arithmetic_constraints:
@@ -76,7 +76,7 @@ Examples:
                 for i, constraint in enumerate(
                     model.arithmetic_constraints[:10], 1
                 ):  # Show first 10
-                    print(f"  {i}. {constraint}")
+                    print(f"  {i}. {constraint.strip()}")
                 if len(model.arithmetic_constraints) > 10:
                     print(f"  ... and {len(model.arithmetic_constraints) - 10} more")
             if model.feature_types:
@@ -100,5 +100,88 @@ Examples:
         sys.exit(1)
 
 
+def uvl2smt():
+    """CLI tool for converting UVL files to SMT-LIB 2 format."""
+    parser = argparse.ArgumentParser(
+        description="Convert a UVL feature model to SMT-LIB 2 format.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  uvl2smt model.uvl                    # Convert to model.smt2 (using Lark)
+  uvl2smt model.uvl output.smt2        # Convert to specific output file
+  uvl2smt model.uvl -v                 # Verbose output
+  uvl2smt model.uvl --antlr            # Use ANTLR parser instead of Lark
+        """,
+    )
+
+    parser.add_argument("uvl_file", help="Path to the input UVL file")
+    parser.add_argument(
+        "output_file",
+        nargs="?",
+        help="Optional path to output SMT-LIB 2 file (default: <uvl_filename>.smt2)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed information about the model",
+    )
+    parser.add_argument(
+        "--lark",
+        action="store_true",
+        help="Use Lark parser (default)",
+    )
+    parser.add_argument(
+        "--antlr",
+        action="store_true",
+        help="Use ANTLR parser instead of Lark",
+    )
+
+    args = parser.parse_args()
+
+    use_antlr = args.antlr
+
+    if args.verbose:
+        print(f"Using {'ANTLR' if use_antlr else 'Lark'} parser")
+
+    uvl_file = args.uvl_file
+
+    if not os.path.exists(uvl_file):
+        print(f"Error: File '{uvl_file}' not found")
+        sys.exit(1)
+
+    if args.output_file:
+        output_file = args.output_file
+    else:
+        basename = os.path.basename(uvl_file)
+        output_file = os.path.splitext(basename)[0] + ".smt2"
+
+    try:
+        model = UVL(from_file=uvl_file, use_antlr=use_antlr)
+        smt_content = model.to_smt()
+
+        with open(output_file, "w") as f:
+            f.write(smt_content)
+
+        print(f"Successfully converted UVL model to SMT-LIB 2 format: {output_file}")
+
+        if args.verbose:
+            print(f"Features: {len(model.features)}")
+            print(f"Boolean constraints: {len(model.boolean_constraints)}")
+            print(f"Arithmetic constraints: {len(model.arithmetic_constraints)}")
+            if model.feature_attributes:
+                print(f"Features with attributes: {len(model.feature_attributes)}")
+            if model.feature_types:
+                print(f"Typed features: {len(model.feature_types)}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        if args.verbose:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    main()
+    uvl2cnf()

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uvllang"
-version = "0.1.2"
-description = "Parser for Universal Variability Language (UVL) with CNF conversion support"
+version = "0.2"
+description = "Parser for the Universal Variability Language (UVL) with conversion support to CNF/SMT"
 readme = "README.md"
 license = "LGPL-3.0-or-later"
 authors = [
@@ -29,15 +29,20 @@ antlr = [
 ]
 dev = [
     "pytest>=7.0",
+    "z3-solver>=4.12.0",
 ]
 
 [project.scripts]
-uvl2cnf = "uvllang.cli:main"
+uvl2cnf = "uvllang.cli:uvl2cnf"
+uvl2smt = "uvllang.cli:uvl2smt"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["uvllang*"]
-exclude = ["tests*", "examples*", "grammars*"]
+exclude = ["tests*", "examples*"]
+
+[tool.setuptools.package-data]
+uvllang = ["../grammars/uvl.lark"]
 
 [tool.setuptools]
 py-modules = []
