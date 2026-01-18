@@ -1,39 +1,42 @@
 """
-Tests for the UVL Parser package.
+Tests for the Lark-based UVL Parser implementation.
+
+These tests verify that the Lark grammar correctly parses UVL files
+and maintains compatibility with the ANTLR implementation.
 """
 
 import pytest
 import os
 import tempfile
-from uvllang.main import UVL
+from uvllang import UVL
 
 
-class TestUVLParser:
-    """Test cases for UVL parsing functionality."""
+@pytest.mark.parametrize("use_antlr", [False, True])
+class TestLarkUVLParser:
+    """Test cases for Lark-based UVL parsing functionality."""
 
-    def test_parse_automotive01_uvl(self):
+    def test_parse_automotive01_uvl(self, use_antlr):
         """Test parsing the automotive01 UVL file."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=example_file, parser_type="antlr")
+        model = UVL(from_file=example_file, use_antlr=use_antlr)
 
         assert model.tree is not None
         assert len(model.features) == 2513
-        assert model.tree.getText().startswith("namespace")
 
-    def test_parse_eshop_uvl(self):
+    def test_parse_eshop_uvl(self, use_antlr):
         """Test parsing the eshop UVL file."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
 
         assert model.tree is not None
         assert len(model.features) == 173
         assert "eShop" in model.features
 
-    def test_parse_simple_uvl(self):
+    def test_parse_simple_uvl(self, use_antlr):
         """Test parsing a simple UVL file."""
         uvl_content = """namespace TestNS
 
@@ -49,7 +52,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             assert model.tree is not None
             assert len(model.features) == 3
             assert "Root" in model.features
@@ -58,7 +61,7 @@ features
         finally:
             os.unlink(temp_file)
 
-    def test_invalid_file_raises_error(self):
+    def test_invalid_file_raises_error(self, use_antlr):
         """Test that parsing an invalid file raises an error."""
         invalid_content = "This is not valid UVL syntax!"
 
@@ -68,21 +71,21 @@ features
 
         try:
             with pytest.raises(Exception):
-                UVL(from_file=temp_file)
+                UVL(from_file=temp_file, use_antlr=use_antlr)
         finally:
             os.unlink(temp_file)
 
-    def test_nonexistent_file_raises_error(self):
+    def test_nonexistent_file_raises_error(self, use_antlr):
         """Test that parsing a nonexistent file raises an error."""
         with pytest.raises(FileNotFoundError):
-            UVL(from_file="nonexistent_file.uvl")
+            UVL(from_file="nonexistent_file.uvl", use_antlr=use_antlr)
 
-    def test_constraint_classification_eshop(self):
+    def test_constraint_classification_eshop(self, use_antlr):
         """Test that eshop.uvl has only arithmetic constraints (no boolean)."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
 
         assert (
             len(model.arithmetic_constraints) == 0
@@ -91,12 +94,12 @@ features
             len(model.boolean_constraints) == 0
         ), "eshop should have 0 boolean constraints"
 
-    def test_constraint_classification_automotive01(self):
+    def test_constraint_classification_automotive01(self, use_antlr):
         """Test that automotive01.uvl has 2833 boolean constraints."""
         automotive_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=automotive_file)
+        model = UVL(from_file=automotive_file, use_antlr=use_antlr)
 
         assert (
             len(model.boolean_constraints) == 2833
@@ -111,16 +114,12 @@ features
             len(implication_constraints) > 0
         ), "Should have implication (=>) constraints"
 
-
-class TestCNFConversion:
-    """Test cases for CNF conversion functionality."""
-
-    def test_cnf_eshop(self):
+    def test_cnf_eshop(self, use_antlr):
         """Test CNF conversion for eshop.uvl."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
         cnf = model.to_cnf()
 
         assert len(cnf.clauses) == 289
@@ -128,20 +127,20 @@ class TestCNFConversion:
         assert all(isinstance(clause, list) for clause in cnf.clauses)
         assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
 
-    def test_cnf_automotive01(self):
+    def test_cnf_automotive01(self, use_antlr):
         """Test CNF conversion for automotive01.uvl."""
         auto_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=auto_file)
+        model = UVL(from_file=auto_file, use_antlr=use_antlr)
         cnf = model.to_cnf()
 
-        assert len(cnf.clauses) == 10311  # Updated: unified parser implementation
+        assert len(cnf.clauses) == 10311
         assert cnf.nv == 2513
         assert all(isinstance(clause, list) for clause in cnf.clauses)
         assert all(isinstance(lit, int) for clause in cnf.clauses for lit in clause)
 
-    def test_cnf_root_constraint(self):
+    def test_cnf_root_constraint(self, use_antlr):
         """Test that CNF includes root feature constraint."""
         uvl_content = """namespace Test
 
@@ -155,14 +154,14 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
         finally:
             os.unlink(temp_file)
 
-    def test_cnf_mandatory_constraint(self):
+    def test_cnf_mandatory_constraint(self, use_antlr):
         """Test that CNF correctly encodes mandatory relationships."""
         uvl_content = """namespace Test
 
@@ -176,7 +175,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -185,7 +184,7 @@ features
         finally:
             os.unlink(temp_file)
 
-    def test_cnf_optional_constraint(self):
+    def test_cnf_optional_constraint(self, use_antlr):
         """Test that CNF correctly encodes optional relationships."""
         uvl_content = """namespace Test
 
@@ -199,7 +198,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -208,7 +207,7 @@ features
         finally:
             os.unlink(temp_file)
 
-    def test_cnf_xor_constraint(self):
+    def test_cnf_xor_constraint(self, use_antlr):
         """Test that CNF correctly encodes XOR/alternative groups."""
         uvl_content = """namespace Test
 
@@ -223,7 +222,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -232,7 +231,7 @@ features
         finally:
             os.unlink(temp_file)
 
-    def test_cnf_or_constraint(self):
+    def test_cnf_or_constraint(self, use_antlr):
         """Test that CNF correctly encodes OR groups."""
         uvl_content = """namespace Test
 
@@ -247,7 +246,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file)
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
             cnf = model.to_cnf()
 
             assert [1] in cnf.clauses
@@ -256,16 +255,12 @@ features
         finally:
             os.unlink(temp_file)
 
-
-class TestBuilder:
-    """Test cases for the FeatureModelBuilder functionality."""
-
-    def test_builder_external_usage_and_feature_iteration(self):
+    def test_builder_external_usage_and_feature_iteration(self, use_antlr):
         """Test that builder can be accessed externally and iterates through all features."""
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file)
+        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
         builder = model.builder()
 
         # Test that builder can be used from outside
