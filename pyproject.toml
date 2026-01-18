@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uvllang"
-version = "0.2"
+version = "0.2.1"
 description = "Parser for the Universal Variability Language (UVL) with conversion support to CNF/SMT"
 readme = "README.md"
 license = "LGPL-3.0-or-later"

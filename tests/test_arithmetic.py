@@ -60,6 +60,17 @@ SMT_EXAMPLE_FILES = [
         "expected_features": {"A": True},
         "expected_string_lengths": {"B_val": 16, "C_val": 16},
     },
+    {
+        "file": "string-constraints.uvl",
+        "features": {"A", "C", "D"},
+        "arith_constraints": 4,
+        "has_types": True,
+        "string_features": ["C", "D"],
+        "has_string_comparisons": True,  # Has string == comparisons
+        "expected_sat": "sat",
+        "expected_features": {"A": True},
+        "expected_attributes": {"C_val": '"Fun"', "D_val": '"Fun"'},  # Z3 returns strings with quotes
+    },
 ]
 
 
@@ -134,7 +145,11 @@ class TestSMTExamples:
         if example.get("string_features"):
             for feature in example["string_features"]:
                 assert f"(declare-const {feature}_val String)" in smt
-                assert f"(str.len {feature}_val)" in smt
+            
+            # Check for str.len if has_len_function is set
+            if example.get("has_len_function"):
+                for feature in example["string_features"]:
+                    assert f"(str.len {feature}_val)" in smt
 
         # Check aggregates are expanded (no raw aggregate functions)
         if example.get("has_aggregates"):

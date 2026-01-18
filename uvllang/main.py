@@ -353,7 +353,12 @@ class UVL:
 
     def _boolean_to_smt(self, constraint):
         """Convert boolean constraint to SMT-LIB format."""
-        result = constraint
+        result = constraint.strip()
+        
+        # Check if it's just a single feature name (no operators)
+        if result.isidentifier():
+            return result
+        
         result = result.replace("!", "not ")
         result = result.replace("&", "and")
         result = result.replace("|", "or")
@@ -557,6 +562,14 @@ class UVL:
             ):
                 return f"(str.len {feature}_val)"
             return f"(str.len {feature})"
+        
+        # Handle string literals (convert single quotes to double quotes)
+        if expr.startswith("'") and expr.endswith("'"):
+            return f'"{expr[1:-1]}"'
+        
+        # Handle String-typed features (convert to _val reference)
+        if expr in self.feature_types and "String" in self.feature_types[expr]:
+            return f"{expr}_val"
 
         # Base case: atomic expression (number, variable, or complete SMT prefix form)
         return expr
