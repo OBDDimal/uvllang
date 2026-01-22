@@ -52,252 +52,330 @@ class UVL:
         self._parse()
 
     @classmethod
-    def visit(
-        cls,
-        feature,
-        clauses,
-        implies,
-        implied_by,
-        groups,
-        ids2features,
-        indent,
-        dump,
-        seen=None,
-    ):
+    def visit(cls, feature, clauses, implies, implied_by, groups, ids2features, indent, dump, seen = None):
 
         if seen is None:
             seen = set()
 
-        if feature in seen:
-            return dump
-
         seen.add(feature)
+
+        # print("Indent:", indent)
 
         dump.append((indent + 4, ids2features[feature]))
 
+
+        print("Feature:", ids2features[feature], f"({feature})")
         childs = implied_by.get(feature, set()).difference(seen)
 
         if feature in groups:
             childs_l = sorted(groups[feature])
+            seen.update(groups[feature])
             xor = True
             for i, child in enumerate(childs_l):
-                for child2 in childs_l[i + 1 :]:
-                    if (mutex := sorted([-child, -child2], key=abs)) not in clauses:
+                for child2 in childs_l[i + 1:]:
+                    if (mutex := sorted([-child, -child2], key = abs)) not in clauses:
                         xor = False
                         break
                 if not xor:
                     break
 
             if xor:
+                print("└ XOR:", [f"{ids2features[f]} ({f})" for f in sorted(childs)])
                 dump.append((indent + 8, "alternative"))
             else:
+                print("└ OR:", [f"{ids2features[f]} ({f})" for f in sorted(childs)])
                 dump.append((indent + 8, "or"))
 
             for child in childs_l:
-                dump = cls.visit(
-                    child,
-                    clauses,
-                    implies,
-                    implied_by,
-                    groups,
-                    ids2features,
-                    indent + 8,
-                    dump,
-                    seen,
-                )
+                dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
+
 
         else:
+            seen.update(childs)
             mandatory = childs.intersection(implies.get(feature, set()))
 
-            if mandatory:
+            if mandatory:                
+                print("└ mandatory:", [f"{ids2features[f]} ({f})" for f in sorted(mandatory)])
                 dump.append((indent + 8, "mandatory"))
                 for child in mandatory:
-                    dump = cls.visit(
-                        child,
-                        clauses,
-                        implies,
-                        implied_by,
-                        groups,
-                        ids2features,
-                        indent + 8,
-                        dump,
-                        seen,
-                    )
+                    dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
 
             optional = childs.difference(mandatory)
             if optional:
+                print("└ optional:", [f"{ids2features[f]} ({f})" for f in sorted(optional)])
                 dump.append((indent + 8, "optional"))
                 for child in optional:
-                    dump = cls.visit(
-                        child,
-                        clauses,
-                        implies,
-                        implied_by,
-                        groups,
-                        ids2features,
-                        indent + 8,
-                        dump,
-                        seen,
-                    )
+                    dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
 
-        return dump
+
+        print()
+
+        return dump, seen
+
 
     @classmethod
     def from_cnf(cls, filepath, file_out):
 
-        cnf = CNF(from_file=filepath)
+        cnf = CNF(from_file = filepath)
 
         ids2features = {}
         for comment in cnf.comments:
             split = re.split(r"\s+", comment.strip())
 
             if len(split[2:]) > 1:
+
                 name = " ".join(split[2:]).strip()
-                if name.startswith('"') and name.endswith('"'):
+
+                if name.startswith("\"") and name.endswith("\""):
                     ids2features[int(split[1])] = name
                 else:
-                    ids2features[int(split[1])] = f'"{name}"'
+                    ids2features[int(split[1])] = f'\"{name}\"' 
             else:
                 ids2features[int(split[1])] = " ".join(split[2:])
 
-        # Analyze CNF structure to recover hierarchy
-        clauses = [sorted(clause, key=abs) for clause in cnf.clauses]
 
-        # Find implications: [-a, b] means a => b
-        implies = {}  # a -> set of b where a => b
+        clauses = [sorted(clause, key = abs) for clause in cnf.clauses]
 
-        # Find group constraints: [-parent, child1, child2, ...] means parent => (child1 | child2 | ...)
+        implies = {}
         groups = {}
+        seen = set()
 
         for clause in clauses:
             if len(clause) == 2:
                 a, b = sorted(clause)
+
+                if abs(a) == 40:
+                    print(clause)
+
                 if a < 0 and b > 0:
-                    # [-a, b] means a => b
                     implies[abs(a)] = implies.get(abs(a), set())
                     implies[abs(a)].add(b)
             elif len(clause) > 2:
-                # Check if it's a group constraint: one negative, rest positive
-                negatives = [x for x in clause if x < 0]
-                if len(negatives) == 1:
-                    parent = abs(negatives[0])
-                    children = {x for x in clause if x > 0}
-                    groups[parent] = children
+                if len(xs := [x for x in clause if x < 0]) == 1:
+                    parent = abs(xs[0])
+                    groups[parent] = {x for x in clause if x > 0}
 
-        # Build parent-child relationships from:
-        # 1. Group relationships (or/alternative): definitive parent-child from at-least-one clauses
-        # 2. Binary implications (child => parent): child can only exist under parent
 
-        # Track which features have been assigned as children
-        assigned_children = set()
-        implied_by = {}  # parent -> children
+        implied_by = {}
 
-        # Priority 1: Add all children from group relationships (most definitive)
-        for parent, children in groups.items():
-            implied_by[parent] = implied_by.get(parent, set())
-            implied_by[parent].update(children)
-            assigned_children.update(children)
+        for k, vs in implies.items():
+            for v in vs:
+                implied_by[v] = implied_by.get(v, set())
+                implied_by[v].add(k)
 
-        # Priority 2: Add children from binary implications (child => parent)
-        # Each child should only be assigned to ONE parent
-        # For bidirectional relationships, choose the more connected feature as parent
-        for child, targets in implies.items():
-            if child not in assigned_children:
-                # Filter out targets where there's a bidirectional relationship AND target has fewer connections
-                filtered_targets = []
-                for p in targets:
-                    # Check if bidirectional
-                    if child in implies.get(p, set()):
-                        # Bidirectional - only keep if parent is more connected
-                        parent_connections = len(implies.get(p, set()))
-                        child_connections = len(implies.get(child, set()))
-                        if parent_connections >= child_connections:
-                            filtered_targets.append(p)
-                    else:
-                        # Unidirectional - keep it
-                        filtered_targets.append(p)
 
-                if not filtered_targets:
-                    continue
+        root_candidates = sum([clause for clause in clauses if len(clause) == 1], [])
 
-                # Choose best parent: prefer those in groups, with fewer incoming edges, with more children
-                def parent_priority(p):
-                    in_group = 1 if p in groups else 0
-                    incoming_count = sum(1 for c, ts in implies.items() if p in ts)
-                    has_children = 1 if p in implied_by else 0
-                    return (in_group, -incoming_count, has_children, -p)
+        print("Root candidates:", root_candidates)
 
-                parent = max(filtered_targets, key=parent_priority)
-                implied_by[parent] = implied_by.get(parent, set())
-                implied_by[parent].add(child)
-                assigned_children.add(child)
+        print("=" * 80)
 
-        # Find root(s) - features with unit clauses
-        roots = []
-        for clause in clauses:
-            if len(clause) == 1 and clause[0] > 0:
-                roots.append(clause[0])
+        for root in root_candidates:
+            dump = [(0, "features")]
+            dump, _ = cls.visit(root, clauses, implies, implied_by, groups, ids2features, 0, dump, seen)
 
-        if not roots:
-            # No root found, shouldn't happen with valid feature model
-            raise ValueError("No root feature found in CNF")
 
-        # Build the feature tree
-        seen = set()
-        dump = [(0, "features")]
+        print("=" * 80)
+        print()
 
-        for root in roots:
-            dump = cls.visit(
-                root, clauses, implies, implied_by, groups, ids2features, 0, dump, seen
-            )
-
-        # Add any features that weren't visited (orphaned features) as optional children of root
-        all_features = set(ids2features.keys())
-        unvisited = all_features - seen
-        if unvisited:
-            # Add them as optional children of the first root
-            if roots:
-                dump.append((8, "optional"))
-                for feature_id in sorted(unvisited):
-                    dump.append((12, ids2features[feature_id]))
-
-        # Convert dump to string
         ls = []
         for indent, line in dump:
             ls.append(f'{" " * indent}{line}')
+
         s = "\n".join(ls)
 
-        # Now convert back to CNF with same feature mapping and find remaining constraints
-        uvl = UVL(from_str=s)
+        print(s)
+
+        uvl = UVL(from_str = s)
+
         features2ids = {v: k for k, v in ids2features.items()}
 
-        recovered_clauses = uvl.to_cnf(features2ids, verbose_info=False).clauses
+        clauses_h = uvl.to_cnf(features2ids).clauses
 
-        # Find clauses in original that aren't in recovered (these are cross-tree constraints)
-        recovered_set = {tuple(sorted(c, key=abs)) for c in recovered_clauses}
-        remaining = []
+        cache = set()
 
-        for clause in clauses:
-            normalized = tuple(sorted(clause, key=abs))
-            if normalized not in recovered_set:
-                remaining.append(clause)
+        for clause in clauses_h:
+            h = hash(str(sorted(clause, key = abs)))
 
-        # Add cross-tree constraints
-        if remaining:
+            if h in cache:
+                continue
+
+            cache.add(h)
+
+        for clause in list(clauses):
+            h = hash(str(sorted(clause, key = abs)))
+
+            if h in cache:
+                print("HIT", clause)
+                clauses.remove(clause)
+                continue
+
+            cache.add(h)
+
+        print("Remaining:", clauses)
+
+        if clauses:
             s += "\n\nconstraints\n"
-            for clause in remaining:
-                constraint = []
-                for lit in clause:
-                    if lit < 0:
-                        constraint.append(f"!{ids2features[abs(lit)]}")
-                    else:
-                        constraint.append(f"{ids2features[abs(lit)]}")
-                constraint_str = " | ".join(constraint)
-                s += f"    {constraint_str}\n"
 
-        # Write to file
+            for clause in clauses:
+
+                constraint = []
+
+                for x in clause:
+                    if x < 0:
+                        constraint.append(f"!{ids2features[abs(x)]}")
+                    else:
+                        constraint.append(f"{ids2features[abs(x)]}")
+
+                constraint = " | ".join(constraint)
+
+                s += " " * 4 + constraint + "\n"
+
+        # print(s)
         with open(file_out, "w+") as fp:
             fp.write(s)
+
+
+
+        # roots = []
+        # implies = {}
+        # or_parents = set()
+        # xor_parents = set()
+
+        # clauses = [sorted(clause, key = abs) for clause in cnf.clauses]
+        # marked = []
+
+        # for clause in clauses:
+        #     if len(clause) == 1:
+        #         # unit clauses, potential root or mandatory child of root
+
+        #         a = clause[0]
+
+        #         if a < 0:
+        #             pass
+        #             # dead
+        #         else:
+        #             roots.append(a)
+
+        #         marked.append(clause)
+
+        #     elif len(clause) == 2:
+        #         a, b = sorted(clause)
+
+        #         if a < 0 and b > 0:
+        #             implies[abs(a)] = implies.get(abs(a), [])
+        #             implies[abs(a)].append(b)
+                
+        #         marked.append(clause)
+        #     elif len(clause) > 2:
+        #         impliers = [x for x in clause if x < 0]
+        #         childs = [x for x in clause if x > 0]
+
+        #         if len(impliers) == 1:
+        #             parent = abs(impliers[0])
+        #             print("found at-least-one constraint", clause)
+        #             print("with parent", impliers)
+
+        #             for child in childs:
+        #                 implies[parent] = implies.get(parent, [])
+        #                 implies[parent].append(child)
+
+        #             xor = True
+        #             marked.append(clause)
+        #             marked_mutexes = []
+        #             for i, child in enumerate(childs):
+        #                 for child2 in childs[i + 1:]:
+        #                     if (mutex := sorted([-child, -child2], key = abs)) not in clauses:
+        #                         xor = False
+        #                         break
+        #                     else:
+        #                         marked_mutexes.append(mutex)
+        #                 if not xor:
+        #                     break
+
+        #             if xor:
+        #                 xor_parents.add(parent)
+        #                 marked.extend(marked_mutexes)
+        #             else:
+        #                 or_parents.add(parent)
+
+
+        #         else:
+        #             print("Ignoring clause", clause)
+
+        # cache = set()
+        # for clause in marked:
+
+        #     if str(clause) in cache:
+        #         continue
+                
+        #     cache.add(str(clause))
+        #     print(clause)
+        #     clauses.remove(clause)
+
+        # print("-->", len(clauses), "remain!")
+
+        # print(implies)
+
+        # implied = set(x for v in implies.values() for x in v)
+    
+        # not_implied = set(range(1, cnf.nv + 1)).difference(implied)
+
+        # print("Implied:", implied)
+        # print("Not Implied:", not_implied)        
+
+        # print(roots)
+
+        # print("=" * 80)
+
+        # if len(roots) == 1:
+        #     root = roots[0]
+
+        #     handled = cls.gather(root, implies, or_parents, xor_parents, ids2features)
+        #     print(len(handled))
+        # else: 
+        #     print("multiple roots not supported")
+
+
+    @classmethod
+    def gather(cls, feature, implies, or_parents, xor_parents, ids2features, handled = None):
+
+        if handled is None:
+            handled = set()
+
+        print("Feature:", feature, ids2features[feature])
+
+        childs = set()
+
+        if feature in or_parents:
+            or_childs = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
+            childs.update(or_childs)
+            print("OR:", [(f, ids2features[f]) for f in or_childs])
+        elif feature in xor_parents:
+            xor_childs = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
+            childs.update(xor_childs)
+            print("XOR:", [(f, ids2features[f]) for f in xor_childs])
+        else:
+            mandatory = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
+            optional = set(k for k,v in implies.items() if feature in v).difference(handled).difference(mandatory)
+            childs.update(mandatory)
+            childs.update(optional)
+            print("mandatory children:", [(f, ids2features[f]) for f in mandatory])
+            print("optional children:", [ids2features[f] for f in optional])
+        print()
+
+        handled.add(feature)
+
+        for c in childs:
+            if c in handled:
+                continue
+
+            print("-->", c)
+
+            handled = cls.gather(c, implies, or_parents, xor_parents, ids2features, handled)
+
+        return handled
+
 
     def _parse(self):
         if self._use_antlr:
@@ -305,9 +383,8 @@ class UVL:
                 input_stream = FileStream(self._file_path)
             else:
                 from antlr4 import InputStream
-
                 input_stream = InputStream(self._content)
-
+            
             lexer = uvl_custom_lexer(input_stream)
             lexer.removeErrorListeners()
             lexer.addErrorListener(CustomErrorListener())
@@ -379,7 +456,7 @@ class UVL:
         """Feature hierarchy builder."""
         return self._builder
 
-    def to_cnf(self, features2ids=None, verbose_info=True):
+    def to_cnf(self, features2ids = None, verbose_info=True):
         builder = self.builder()
 
         # sort features by name to make ids persistent regardless of hierarchy
@@ -451,29 +528,23 @@ class UVL:
             try:
                 # Clean up the constraint string
                 constraint_str = constraint_str.strip()
-
+                
                 # Check if this is a pure boolean constraint
                 # Skip if it contains attribute references (.)
                 # or arithmetic comparisons that are not part of =>
-                temp_str = constraint_str.replace(
-                    "=>", ""
-                )  # Remove implication operator
-                if "." in constraint_str:
-                    print(
-                        f"Info: Skipping constraint with attribute reference: '{constraint_str}'"
-                    )
+                temp_str = constraint_str.replace('=>', '')  # Remove implication operator
+                if '.' in constraint_str:
+                    print(f"Info: Skipping constraint with attribute reference: '{constraint_str}'")
                     continue
-                if any(op in temp_str for op in [">", "<", "==", "!="]):
-                    print(
-                        f"Info: Skipping constraint with arithmetic comparison: '{constraint_str}'"
-                    )
+                if any(op in temp_str for op in ['>', '<', '==', '!=']):
+                    print(f"Info: Skipping constraint with arithmetic comparison: '{constraint_str}'")
                     continue
-
+                
                 # Parse and convert to CNF
                 expr = self._parse_boolean_expr(constraint_str, features2ids)
                 cnf_clauses = self._to_cnf(expr, features2ids)
                 clauses.extend(cnf_clauses)
-
+                
             except Exception as e:
                 print(f"Warning: Could not convert constraint '{constraint_str}': {e}")
 
@@ -482,70 +553,70 @@ class UVL:
     def _parse_boolean_expr(self, expr_str, features2ids):
         """Parse a boolean expression into an AST."""
         expr_str = expr_str.strip()
-
+        
         # Handle implication (lowest precedence)
         depth = 0
         for i in range(len(expr_str) - 1, -1, -1):
-            if expr_str[i] == "(":
+            if expr_str[i] == '(':
                 depth += 1
-            elif expr_str[i] == ")":
+            elif expr_str[i] == ')':
                 depth -= 1
-            elif depth == 0 and i > 0 and expr_str[i - 1 : i + 1] == "=>":
-                left = self._parse_boolean_expr(expr_str[: i - 1], features2ids)
-                right = self._parse_boolean_expr(expr_str[i + 1 :], features2ids)
-                return ("IMPLIES", left, right)
-
+            elif depth == 0 and i > 0 and expr_str[i-1:i+1] == '=>':
+                left = self._parse_boolean_expr(expr_str[:i-1], features2ids)
+                right = self._parse_boolean_expr(expr_str[i+1:], features2ids)
+                return ('IMPLIES', left, right)
+        
         # Handle OR (next precedence)
         depth = 0
         for i in range(len(expr_str)):
-            if expr_str[i] == "(":
+            if expr_str[i] == '(':
                 depth += 1
-            elif expr_str[i] == ")":
+            elif expr_str[i] == ')':
                 depth -= 1
-            elif depth == 0 and expr_str[i] == "|":
+            elif depth == 0 and expr_str[i] == '|':
                 left = self._parse_boolean_expr(expr_str[:i], features2ids)
-                right = self._parse_boolean_expr(expr_str[i + 1 :], features2ids)
-                return ("OR", left, right)
-
+                right = self._parse_boolean_expr(expr_str[i+1:], features2ids)
+                return ('OR', left, right)
+        
         # Handle AND (next precedence)
         depth = 0
         for i in range(len(expr_str)):
-            if expr_str[i] == "(":
+            if expr_str[i] == '(':
                 depth += 1
-            elif expr_str[i] == ")":
+            elif expr_str[i] == ')':
                 depth -= 1
-            elif depth == 0 and expr_str[i] == "&":
+            elif depth == 0 and expr_str[i] == '&':
                 left = self._parse_boolean_expr(expr_str[:i], features2ids)
-                right = self._parse_boolean_expr(expr_str[i + 1 :], features2ids)
-                return ("AND", left, right)
-
+                right = self._parse_boolean_expr(expr_str[i+1:], features2ids)
+                return ('AND', left, right)
+        
         # Handle NOT (highest precedence)
-        if expr_str.startswith("!"):
+        if expr_str.startswith('!'):
             inner = self._parse_boolean_expr(expr_str[1:], features2ids)
-            return ("NOT", inner)
-
+            return ('NOT', inner)
+        
         # Remove outer parentheses if they wrap the entire expression
-        if expr_str.startswith("(") and expr_str.endswith(")"):
+        if expr_str.startswith('(') and expr_str.endswith(')'):
             depth = 0
             for i, c in enumerate(expr_str):
-                if c == "(":
+                if c == '(':
                     depth += 1
-                elif c == ")":
+                elif c == ')':
                     depth -= 1
                 if depth == 0 and i < len(expr_str) - 1:
                     break
             if i == len(expr_str) - 1:
                 return self._parse_boolean_expr(expr_str[1:-1], features2ids)
-
+        
         # Base case: feature name (literal)
         feature_name = expr_str.strip()
         if feature_name not in features2ids:
             raise ValueError(f"Unknown feature: {feature_name}")
-        return ("LIT", features2ids[feature_name])
+        return ('LIT', features2ids[feature_name])
 
     def _to_cnf(self, expr, features2ids):
         """Convert boolean expression AST to CNF clauses.
-
+        
         Uses standard logical equivalences:
         - A => B  ≡  ~A | B
         - ~(A & B)  ≡  ~A | ~B  (De Morgan)
@@ -562,138 +633,134 @@ class UVL:
     def _to_nnf(self, expr):
         """Convert to Negation Normal Form (eliminate => and push NOT inward)."""
         op = expr[0]
-
-        if op == "LIT":
+        
+        if op == 'LIT':
             return expr
-
-        elif op == "NOT":
+        
+        elif op == 'NOT':
             inner = expr[1]
             inner_op = inner[0]
-
-            if inner_op == "LIT":
+            
+            if inner_op == 'LIT':
                 return expr  # NOT of literal is already NNF
-            elif inner_op == "NOT":
+            elif inner_op == 'NOT':
                 # Double negation
                 return self._to_nnf(inner[1])
-            elif inner_op == "AND":
+            elif inner_op == 'AND':
                 # De Morgan: ~(A & B) = ~A | ~B
-                left = self._to_nnf(("NOT", inner[1]))
-                right = self._to_nnf(("NOT", inner[2]))
-                return ("OR", left, right)
-            elif inner_op == "OR":
+                left = self._to_nnf(('NOT', inner[1]))
+                right = self._to_nnf(('NOT', inner[2]))
+                return ('OR', left, right)
+            elif inner_op == 'OR':
                 # De Morgan: ~(A | B) = ~A & ~B
-                left = self._to_nnf(("NOT", inner[1]))
-                right = self._to_nnf(("NOT", inner[2]))
-                return ("AND", left, right)
-            elif inner_op == "IMPLIES":
+                left = self._to_nnf(('NOT', inner[1]))
+                right = self._to_nnf(('NOT', inner[2]))
+                return ('AND', left, right)
+            elif inner_op == 'IMPLIES':
                 # ~(A => B) = ~(~A | B) = A & ~B
                 left = self._to_nnf(inner[1])
-                right = self._to_nnf(("NOT", inner[2]))
-                return ("AND", left, right)
-
-        elif op == "AND":
+                right = self._to_nnf(('NOT', inner[2]))
+                return ('AND', left, right)
+        
+        elif op == 'AND':
             left = self._to_nnf(expr[1])
             right = self._to_nnf(expr[2])
-            return ("AND", left, right)
-
-        elif op == "OR":
+            return ('AND', left, right)
+        
+        elif op == 'OR':
             left = self._to_nnf(expr[1])
             right = self._to_nnf(expr[2])
-            return ("OR", left, right)
-
-        elif op == "IMPLIES":
+            return ('OR', left, right)
+        
+        elif op == 'IMPLIES':
             # A => B  ≡  ~A | B
-            left = self._to_nnf(("NOT", expr[1]))
+            left = self._to_nnf(('NOT', expr[1]))
             right = self._to_nnf(expr[2])
-            return ("OR", left, right)
-
+            return ('OR', left, right)
+        
         return expr
 
     def _distribute(self, expr):
         """Distribute OR over AND to get CNF."""
         op = expr[0]
-
-        if op in ("LIT", "NOT"):
+        
+        if op in ('LIT', 'NOT'):
             return expr
-
-        elif op == "AND":
+        
+        elif op == 'AND':
             left = self._distribute(expr[1])
             right = self._distribute(expr[2])
-            return ("AND", left, right)
-
-        elif op == "OR":
+            return ('AND', left, right)
+        
+        elif op == 'OR':
             left = self._distribute(expr[1])
             right = self._distribute(expr[2])
-
+            
             # Check if we need to distribute
             left_op = left[0]
             right_op = right[0]
-
-            if left_op == "AND":
+            
+            if left_op == 'AND':
                 # (A & B) | C  ≡  (A | C) & (B | C)
                 a, b = left[1], left[2]
                 c = right
-                return (
-                    "AND",
-                    self._distribute(("OR", a, c)),
-                    self._distribute(("OR", b, c)),
-                )
-
-            elif right_op == "AND":
+                return ('AND',
+                       self._distribute(('OR', a, c)),
+                       self._distribute(('OR', b, c)))
+            
+            elif right_op == 'AND':
                 # A | (B & C)  ≡  (A | B) & (A | C)
                 a = left
                 b, c = right[1], right[2]
-                return (
-                    "AND",
-                    self._distribute(("OR", a, b)),
-                    self._distribute(("OR", a, c)),
-                )
-
+                return ('AND',
+                       self._distribute(('OR', a, b)),
+                       self._distribute(('OR', a, c)))
+            
             else:
-                return ("OR", left, right)
-
+                return ('OR', left, right)
+        
         return expr
 
     def _extract_clauses(self, cnf):
         """Extract clauses from CNF expression."""
         clauses = []
-
+        
         def extract(expr):
             op = expr[0]
-
-            if op == "AND":
+            
+            if op == 'AND':
                 extract(expr[1])
                 extract(expr[2])
             else:
                 # This is a single clause (OR of literals or a single literal)
                 clause = self._extract_literals(expr)
                 clauses.append(clause)
-
+        
         extract(cnf)
         return clauses
 
     def _extract_literals(self, expr):
         """Extract literals from a clause (OR expression or single literal)."""
         literals = []
-
+        
         def extract(e):
             op = e[0]
-
-            if op == "LIT":
+            
+            if op == 'LIT':
                 literals.append(e[1])
-            elif op == "NOT":
+            elif op == 'NOT':
                 # NOT of a literal
                 inner = e[1]
-                if inner[0] == "LIT":
+                if inner[0] == 'LIT':
                     literals.append(-inner[1])
                 else:
                     raise ValueError("NOT should only be applied to literals in CNF")
-            elif op == "OR":
+            elif op == 'OR':
                 extract(e[1])
                 extract(e[2])
             else:
                 raise ValueError(f"Unexpected operator in clause: {op}")
-
+        
         extract(expr)
         return literals
 
@@ -706,8 +773,7 @@ class UVL:
         string_features = set()
         for feature in self.features:
             if (
-                feature in self.feature_types
-                and "String" in self.feature_types[feature]
+                feature in self.feature_types and "String" in self.feature_types[feature]
             ):
                 string_features.add(feature)
 
@@ -809,69 +875,69 @@ class UVL:
 
     def _boolean_to_smt(self, constraint):
         """Convert boolean constraint to SMT-LIB format."""
-
+        
         def parse_boolean_expr(expr):
             """Recursively parse and convert boolean expression to SMT-LIB."""
             expr = expr.strip()
-
+            
             # Remove outer parentheses if they wrap the entire expression
-            if expr.startswith("(") and expr.endswith(")"):
+            if expr.startswith('(') and expr.endswith(')'):
                 # Check if these are the outermost parens
                 depth = 0
                 for i, c in enumerate(expr):
-                    if c == "(":
+                    if c == '(':
                         depth += 1
-                    elif c == ")":
+                    elif c == ')':
                         depth -= 1
                     if depth == 0 and i < len(expr) - 1:
                         break
                 if i == len(expr) - 1:
                     expr = expr[1:-1].strip()
-
+            
             # Handle implication (lowest precedence)
             depth = 0
             for i in range(len(expr) - 1, -1, -1):
-                if expr[i] == "(":
+                if expr[i] == '(':
                     depth += 1
-                elif expr[i] == ")":
+                elif expr[i] == ')':
                     depth -= 1
-                elif depth == 0 and i > 0 and expr[i - 1 : i + 1] == "=>":
-                    left = parse_boolean_expr(expr[: i - 1])
-                    right = parse_boolean_expr(expr[i + 1 :])
+                elif depth == 0 and i > 0 and expr[i-1:i+1] == '=>':
+                    left = parse_boolean_expr(expr[:i-1])
+                    right = parse_boolean_expr(expr[i+1:])
                     return f"(=> {left} {right})"
-
+            
             # Handle OR (next precedence)
             depth = 0
             for i in range(len(expr)):
-                if expr[i] == "(":
+                if expr[i] == '(':
                     depth += 1
-                elif expr[i] == ")":
+                elif expr[i] == ')':
                     depth -= 1
-                elif depth == 0 and expr[i] == "|":
+                elif depth == 0 and expr[i] == '|':
                     left = parse_boolean_expr(expr[:i])
-                    right = parse_boolean_expr(expr[i + 1 :])
+                    right = parse_boolean_expr(expr[i+1:])
                     return f"(or {left} {right})"
-
+            
             # Handle AND (next precedence)
             depth = 0
             for i in range(len(expr)):
-                if expr[i] == "(":
+                if expr[i] == '(':
                     depth += 1
-                elif expr[i] == ")":
+                elif expr[i] == ')':
                     depth -= 1
-                elif depth == 0 and expr[i] == "&":
+                elif depth == 0 and expr[i] == '&':
                     left = parse_boolean_expr(expr[:i])
-                    right = parse_boolean_expr(expr[i + 1 :])
+                    right = parse_boolean_expr(expr[i+1:])
                     return f"(and {left} {right})"
-
+            
             # Handle NOT (highest precedence)
-            if expr.startswith("!"):
+            if expr.startswith('!'):
                 inner = parse_boolean_expr(expr[1:])
                 return f"(not {inner})"
-
+            
             # Base case: feature name (including quoted names)
             return expr
-
+        
         return parse_boolean_expr(constraint)
 
     def _arithmetic_to_smt(self, constraint):
@@ -920,8 +986,7 @@ class UVL:
             feature_attrs = []
             for feature in self.features:
                 if (
-                    feature in self.feature_attributes
-                    and attr_name in self.feature_attributes[feature]
+                    feature in self.feature_attributes and attr_name in self.feature_attributes[feature]
                 ):
                     attr_ref = f"{feature}.{attr_name}"
                     if self._is_feature_optional(feature):
