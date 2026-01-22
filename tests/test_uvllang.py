@@ -82,7 +82,7 @@ EXAMPLE_FILES = [
 class TestUVLParsing:
     """Consolidated tests for UVL file parsing."""
 
-    def test_parse_file(self, example, use_antlr):
+    def test_uvl2cnf(self, example, use_antlr):
         """Test that file parses successfully with expected feature count."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
@@ -94,13 +94,6 @@ class TestUVLParsing:
             len(model.features) == example["features"]
         ), f"{example['file']} should have {example['features']} features"
 
-    def test_constraint_classification(self, example, use_antlr):
-        """Test that constraints are classified correctly."""
-        example_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", example["file"]
-        )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
-
         assert (
             len(model.boolean_constraints) == example["bool_constraints"]
         ), f"{example['file']} should have {example['bool_constraints']} boolean constraints"
@@ -108,12 +101,6 @@ class TestUVLParsing:
             len(model.arithmetic_constraints) == example["arith_constraints"]
         ), f"{example['file']} should have {example['arith_constraints']} arithmetic constraints"
 
-    def test_cnf_conversion(self, example, use_antlr):
-        """Test CNF conversion"""
-        example_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", example["file"]
-        )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
         cnf = model.to_cnf()
 
         assert (
@@ -179,9 +166,9 @@ features
         uvl_content = """namespace Test
 
 features
-    Root
+    ARoot
         mandatory
-            Child
+            BChild
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
             f.write(uvl_content)
@@ -199,9 +186,9 @@ features
         uvl_content = """namespace Test
 
 features
-    Root
+    ARoot
         mandatory
-            Child
+            BChild
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
             f.write(uvl_content)
@@ -221,9 +208,9 @@ features
         uvl_content = """namespace Test
 
 features
-    Root
+    ARoot
         optional
-            OptionalChild
+            BOptionalChild
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
             f.write(uvl_content)
@@ -243,10 +230,10 @@ features
         uvl_content = """namespace Test
 
 features
-    Root
+    ARoot
         alternative
-            ChildA
-            ChildB
+            BChildA
+            CChildB
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
             f.write(uvl_content)
@@ -266,10 +253,10 @@ features
         uvl_content = """namespace Test
 
 features
-    Root
+    ARoot
         or
-            ChildA
-            ChildB
+            BChildA
+            CChildB
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
             f.write(uvl_content)

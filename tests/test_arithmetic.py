@@ -69,7 +69,10 @@ SMT_EXAMPLE_FILES = [
         "has_string_comparisons": True,  # Has string == comparisons
         "expected_sat": "sat",
         "expected_features": {"A": True},
-        "expected_attributes": {"C_val": '"Fun"', "D_val": '"Fun"'},  # Z3 returns strings with quotes
+        "expected_attributes": {
+            "C_val": '"Fun"',
+            "D_val": '"Fun"',
+        },  # Z3 returns strings with quotes
     },
 ]
 
@@ -145,7 +148,7 @@ class TestSMTExamples:
         if example.get("string_features"):
             for feature in example["string_features"]:
                 assert f"(declare-const {feature}_val String)" in smt
-            
+
             # Check for str.len if has_len_function is set
             if example.get("has_len_function"):
                 for feature in example["string_features"]:

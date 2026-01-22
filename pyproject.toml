@@ -19,7 +19,6 @@ classifiers = [
 requires-python = ">=3.0"
 dependencies = [
     "lark>=1.1.0",
-    "sympy>=1.12",
     "python-sat>=0.1.8.dev13",
 ]
 
@@ -35,6 +34,7 @@ dev = [
 [project.scripts]
 uvl2cnf = "uvllang.cli:uvl2cnf"
 uvl2smt = "uvllang.cli:uvl2smt"
+any2uvl = "uvllang.cli:any2uvl"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI tool for converting UVL files to CNF/DIMACS format.
+CLI tool for converting UVL files to CNF/SMT format.
 """
 
 import sys
@@ -183,5 +183,59 @@ Examples:
         sys.exit(1)
 
 
-if __name__ == "__main__":
-    uvl2cnf()
+def any2uvl():
+    """CLI tool for converting CNF/DIMACS files to UVL format."""
+    parser = argparse.ArgumentParser(
+        description="Convert a CNF/SMT file to UVL format.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  any2uvl model.dimacs                 # Convert to model_recovered.uvl
+  any2uvl model.dimacs output.uvl      # Convert to specific output file
+  any2uvl model.dimacs -v              # Verbose output
+        """,
+    )
+
+    parser.add_argument("input_file", help="Path to the input CNF/DIMACS file")
+    parser.add_argument(
+        "output_file",
+        nargs="?",
+        help="Optional path to output UVL file (default: <input_filename>_recovered.uvl)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed information about the conversion",
+    )
+
+    args = parser.parse_args()
+
+    input_file = args.input_file
+
+    if not os.path.exists(input_file):
+        print(f"Error: File '{input_file}' not found")
+        sys.exit(1)
+
+    if args.output_file:
+        output_file = args.output_file
+    else:
+        basename = os.path.basename(input_file)
+        name_without_ext = os.path.splitext(basename)[0]
+        output_file = name_without_ext + "_recovered.uvl"
+
+    try:
+        if args.verbose:
+            print(f"Converting {input_file} to UVL format...")
+
+        UVL.from_cnf(input_file, output_file)
+
+        print(f"Successfully converted to UVL format: {output_file}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        if args.verbose:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
