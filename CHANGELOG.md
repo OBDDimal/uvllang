@@ -1,3 +1,8 @@
+## v0.2.3
+
+### Bug Fixes
+* Reimplemented hierarchy detection in cnf2uvl
+
 ## v0.2.2
 
 ### Features
