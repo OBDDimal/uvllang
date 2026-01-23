@@ -52,65 +52,47 @@ class UVL:
         self._parse()
 
     @classmethod
-    def visit(cls, feature, clauses, implies, implied_by, groups, ids2features, indent, dump, seen = None):
+    def find_depths(cls, feature, parent, parents, clauses, implies, implied_by, groups, ids2features, depth, depths):
 
-        if seen is None:
-            seen = set()
+        _, type = parents.get(feature, (None, None))
 
-        seen.add(feature)
-
-        # print("Indent:", indent)
-
-        dump.append((indent + 4, ids2features[feature]))
-
-
-        print("Feature:", ids2features[feature], f"({feature})")
-        childs = implied_by.get(feature, set()).difference(seen)
-
-        if feature in groups:
-            childs_l = sorted(groups[feature])
-            seen.update(groups[feature])
-            xor = True
-            for i, child in enumerate(childs_l):
-                for child2 in childs_l[i + 1:]:
-                    if (mutex := sorted([-child, -child2], key = abs)) not in clauses:
-                        xor = False
-                        break
-                if not xor:
-                    break
-
-            if xor:
-                print("└ XOR:", [f"{ids2features[f]} ({f})" for f in sorted(childs)])
-                dump.append((indent + 8, "alternative"))
-            else:
-                print("└ OR:", [f"{ids2features[f]} ({f})" for f in sorted(childs)])
-                dump.append((indent + 8, "or"))
-
-            for child in childs_l:
-                dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
-
-
+        if feature in depths:
+            old_depth = depths[feature]
         else:
-            seen.update(childs)
-            mandatory = childs.intersection(implies.get(feature, set()))
+            old_depth = -1
 
-            if mandatory:                
-                print("└ mandatory:", [f"{ids2features[f]} ({f})" for f in sorted(mandatory)])
-                dump.append((indent + 8, "mandatory"))
-                for child in mandatory:
-                    dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
+        if parent in groups and feature not in groups[parent]:
+            # maintain groups whenever possible
+            pass
+        elif old_depth == depth and type and type == "mandatory":
+            # maintain mandatory whenever possible
+            pass
+        else:
 
-            optional = childs.difference(mandatory)
-            if optional:
-                print("└ optional:", [f"{ids2features[f]} ({f})" for f in sorted(optional)])
-                dump.append((indent + 8, "optional"))
-                for child in optional:
-                    dump, seen = cls.visit(child, clauses, implies, implied_by, groups, ids2features, indent + 8, dump, seen)
+            depths[feature] = min(depths.get(feature, depth), depth)
+
+            if old_depth == -1 or old_depth >= depths[feature]:
+                if parent in groups:
+
+                    parents[feature] = (parent, "group")
+
+                elif parent in implies and feature in implies[parent]:
+                    parents[feature] = (parent, "mandatory")
+                else:
+                    parents[feature] = (parent, "optional")
+
+            if old_depth >= 0:
+                print(ids2features[feature], feature, old_depth, "-->", depth)
+
+        childs = {child for child in implied_by.get(feature, set()) if child not in depths or depths[child] >= depth + 1}
+
+        for child in childs:
+            depths, parents = cls.find_depths(child, feature, parents, clauses, implies, implied_by, groups, ids2features, depth + 1, depths)
 
 
-        print()
+        return depths, parents
 
-        return dump, seen
+
 
 
     @classmethod
@@ -119,6 +101,7 @@ class UVL:
         cnf = CNF(from_file = filepath)
 
         ids2features = {}
+
         for comment in cnf.comments:
             split = re.split(r"\s+", comment.strip())
 
@@ -129,16 +112,16 @@ class UVL:
                 if name.startswith("\"") and name.endswith("\""):
                     ids2features[int(split[1])] = name
                 else:
-                    ids2features[int(split[1])] = f'\"{name}\"' 
+                    ids2features[int(split[1])] = f'\"{name}\"'
             else:
-                ids2features[int(split[1])] = " ".join(split[2:])
+                ids2features[int(split[1])] = split[2]
+
 
 
         clauses = [sorted(clause, key = abs) for clause in cnf.clauses]
 
         implies = {}
         groups = {}
-        seen = set()
 
         for clause in clauses:
             if len(clause) == 2:
@@ -166,25 +149,57 @@ class UVL:
 
         root_candidates = sum([clause for clause in clauses if len(clause) == 1], [])
 
-        print("Root candidates:", root_candidates)
-
+        print(ids2features[root_candidates[0]])
         print("=" * 80)
 
-        for root in root_candidates:
-            dump = [(0, "features")]
-            dump, _ = cls.visit(root, clauses, implies, implied_by, groups, ids2features, 0, dump, seen)
+        for root in root_candidates[:1]:
+            depths, parents = cls.find_depths(root, None, {}, clauses, implies, implied_by, groups, ids2features, 0, {})
+
+        print("=" * 40)
+        print(20 in implies and 45 in implies[20])
+        print("=" * 40)
+
+        print(depths)
+
+        for k, (v, t) in parents.items():
+            if k not in root_candidates:
+                print(ids2features[k], "has parent", ids2features[v], "and is", t)
+
+        # TODO: Handle non-unique root (find largest and hang the others as mandatory childs below)
+
+        parents2childs = {}
+
+        for k, (v, t) in parents.items():
+            parents2childs[v] = parents2childs.get(v, [])
+            parents2childs[v].append((k, t))
+
+        for parent in parents2childs:
+            parents2childs[parent] = sorted(parents2childs[parent], key = lambda x: x[1])
+
+        print(parents2childs)
+
+        root = root_candidates[0]
+
+        dump = [(0, "features")]
+        dump = cls.visit(root, 1, parents2childs, ids2features, clauses, groups, dump)
 
 
-        print("=" * 80)
-        print()
+
+
+
+            # dump = [(0, "features")]
+        #     dump, _ = cls.visit(root, clauses, implies, implied_by, groups, ids2features, 0, dump, seen)
+
+
+        # print("=" * 80)
+        # print()
 
         ls = []
         for indent, line in dump:
-            ls.append(f'{" " * indent}{line}')
+            ls.append(f'{" " * indent * 4}{line}')
 
         s = "\n".join(ls)
 
-        print(s)
 
         uvl = UVL(from_str = s)
 
@@ -236,106 +251,59 @@ class UVL:
             fp.write(s)
 
 
+    @classmethod
+    def visit(cls, feature, indent, parents2childs, ids2features, clauses, groups, dump):
 
-        # roots = []
-        # implies = {}
-        # or_parents = set()
-        # xor_parents = set()
+        # print("Visiting", feature, ids2features[feature])
+        dump.append((indent, ids2features[feature]))
 
-        # clauses = [sorted(clause, key = abs) for clause in cnf.clauses]
-        # marked = []
+        childs = parents2childs.get(feature, [])
 
-        # for clause in clauses:
-        #     if len(clause) == 1:
-        #         # unit clauses, potential root or mandatory child of root
+        # print(ids2features[feature], [(ids2features[child], child, type) for child, type in childs])
+        mandatory = [child for child, type in childs if type == "mandatory"]
+        optional = [child for child, type in childs if type == "optional"]
 
-        #         a = clause[0]
 
-        #         if a < 0:
-        #             pass
-        #             # dead
-        #         else:
-        #             roots.append(a)
+        if feature in groups:
 
-        #         marked.append(clause)
+            childs_l = list(groups[feature])
 
-        #     elif len(clause) == 2:
-        #         a, b = sorted(clause)
+            is_xor = True
+            for i, child1 in enumerate(childs_l):
+                for child2 in childs_l[i + 1:]:
 
-        #         if a < 0 and b > 0:
-        #             implies[abs(a)] = implies.get(abs(a), [])
-        #             implies[abs(a)].append(b)
+                    # Inefficient
+                    if not sorted([-child1, -child2], key = abs) in clauses:
+                        is_xor = False
+                        break
+                if not is_xor:
+                    break
+
+            if is_xor:
+                dump.append((indent + 1, "alternative"))
+            else:
+                dump.append((indent + 1, "or"))
+
+            for child in childs_l:
+                dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
+
+        else:
+            mandatory = [child for child, type in childs if type == "mandatory"]
+            optional = [child for child, type in childs if type == "optional"]
+
+            if mandatory:
+                dump.append((indent + 1, "mandatory"))
                 
-        #         marked.append(clause)
-        #     elif len(clause) > 2:
-        #         impliers = [x for x in clause if x < 0]
-        #         childs = [x for x in clause if x > 0]
+                for child in mandatory:
+                    dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
 
-        #         if len(impliers) == 1:
-        #             parent = abs(impliers[0])
-        #             print("found at-least-one constraint", clause)
-        #             print("with parent", impliers)
+            if optional:
+                dump.append((indent + 1, "optional"))
 
-        #             for child in childs:
-        #                 implies[parent] = implies.get(parent, [])
-        #                 implies[parent].append(child)
+                for child in optional:
+                    dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
 
-        #             xor = True
-        #             marked.append(clause)
-        #             marked_mutexes = []
-        #             for i, child in enumerate(childs):
-        #                 for child2 in childs[i + 1:]:
-        #                     if (mutex := sorted([-child, -child2], key = abs)) not in clauses:
-        #                         xor = False
-        #                         break
-        #                     else:
-        #                         marked_mutexes.append(mutex)
-        #                 if not xor:
-        #                     break
-
-        #             if xor:
-        #                 xor_parents.add(parent)
-        #                 marked.extend(marked_mutexes)
-        #             else:
-        #                 or_parents.add(parent)
-
-
-        #         else:
-        #             print("Ignoring clause", clause)
-
-        # cache = set()
-        # for clause in marked:
-
-        #     if str(clause) in cache:
-        #         continue
-                
-        #     cache.add(str(clause))
-        #     print(clause)
-        #     clauses.remove(clause)
-
-        # print("-->", len(clauses), "remain!")
-
-        # print(implies)
-
-        # implied = set(x for v in implies.values() for x in v)
-    
-        # not_implied = set(range(1, cnf.nv + 1)).difference(implied)
-
-        # print("Implied:", implied)
-        # print("Not Implied:", not_implied)        
-
-        # print(roots)
-
-        # print("=" * 80)
-
-        # if len(roots) == 1:
-        #     root = roots[0]
-
-        #     handled = cls.gather(root, implies, or_parents, xor_parents, ids2features)
-        #     print(len(handled))
-        # else: 
-        #     print("multiple roots not supported")
-
+        return dump
 
     @classmethod
     def gather(cls, feature, implies, or_parents, xor_parents, ids2features, handled = None):
@@ -462,7 +430,7 @@ class UVL:
         # sort features by name to make ids persistent regardless of hierarchy
         if features2ids is None:
             features2ids = {
-                feature: i + 1 for i, feature in enumerate(sorted(self.features))
+                feature: i + 1 for i, feature in enumerate(sorted(set(self.features)))
             }
 
         clauses = []
