@@ -52,7 +52,7 @@ class UVL:
         self._parse()
 
     @classmethod
-    def find_depths(cls, feature, parent, parents, clauses, implies, implied_by, groups, ids2features, depth, depths):
+    def find_depths(cls, feature, parent, parents, clauses, implies, implied_by, groups, ids2features, depth, depths, by_name=False):
 
         _, type = parents.get(feature, (None, None))
 
@@ -71,29 +71,40 @@ class UVL:
             # feature is already placed as a group member; skip assignment from non-group parent
             pass
         else:
-
             depths[feature] = min(depths.get(feature, depth), depth)
 
-            if old_depth == -1 or old_depth >= depths[feature]:
+            is_tie = old_depth == depths[feature]
+            if old_depth == -1 or old_depth > depths[feature]:
+                assign = True
+            elif is_tie and by_name:
+                old_parent = parents[feature][0]
+                child_name = ids2features.get(feature, "").strip('"').lower()
+                old_sim = cls._name_sim(child_name, ids2features.get(old_parent, ""))
+                new_sim = cls._name_sim(child_name, ids2features.get(parent, ""))
+                assign = new_sim > old_sim
+            else:
+                assign = is_tie  # default: last write wins
+
+            if assign:
                 if parent in groups:
-
                     parents[feature] = (parent, "group")
-
                 elif parent in implies and feature in implies[parent]:
                     parents[feature] = (parent, "mandatory")
                 else:
                     parents[feature] = (parent, "optional")
 
-            if old_depth >= 0:
-                print(ids2features[feature], feature, old_depth, "-->", depth)
-
         childs = {child for child in implied_by.get(feature, set()) if child not in depths or depths[child] >= depth + 1}
 
         for child in childs:
-            depths, parents = cls.find_depths(child, feature, parents, clauses, implies, implied_by, groups, ids2features, depth + 1, depths)
-
+            depths, parents = cls.find_depths(child, feature, parents, clauses, implies, implied_by, groups, ids2features, depth + 1, depths, by_name=by_name)
 
         return depths, parents
+
+    @staticmethod
+    def _name_sim(child_name, parent_name):
+        import difflib
+        p = parent_name.strip('"').lower()
+        return difflib.SequenceMatcher(None, child_name, p).ratio()
 
 
 
@@ -115,7 +126,7 @@ class UVL:
         parents2childs.setdefault(new_parent_id, []).append((child_id, rel))
 
     @classmethod
-    def from_cnf(cls, filepath, file_out):
+    def from_cnf(cls, filepath, file_out, optimize=False, by_name=False):
 
         cnf = CNF(from_file = filepath)
 
@@ -124,16 +135,11 @@ class UVL:
         for comment in cnf.comments:
             split = re.split(r"\s+", comment.strip())
 
-            if len(split[2:]) > 1:
-
-                name = " ".join(split[2:]).strip()
-
-                if name.startswith("\"") and name.endswith("\""):
-                    ids2features[int(split[1])] = name
-                else:
-                    ids2features[int(split[1])] = f'\"{name}\"'
+            name = " ".join(split[2:]).strip()
+            if name.startswith('"') and name.endswith('"'):
+                ids2features[int(split[1])] = name
             else:
-                ids2features[int(split[1])] = split[2]
+                ids2features[int(split[1])] = f'"{name}"' if ' ' in name else name
 
 
 
@@ -146,9 +152,6 @@ class UVL:
             if len(clause) == 2:
                 a, b = sorted(clause)
 
-                if abs(a) == 40:
-                    print(clause)
-
                 if a < 0 and b > 0:
                     implies[abs(a)] = implies.get(abs(a), set())
                     implies[abs(a)].add(b)
@@ -157,8 +160,6 @@ class UVL:
                     parent = abs(xs[0])
                     groups[parent] = {x for x in clause if x > 0}
 
-
-        print("groups", groups)
 
         implied_by = {}
 
@@ -170,23 +171,8 @@ class UVL:
 
         root_candidates = sum([clause for clause in clauses if len(clause) == 1], [])
 
-        print(ids2features[root_candidates[0]])
-        print("=" * 80)
-
         for root in root_candidates[:1]:
-            depths, parents = cls.find_depths(root, None, {}, clauses, implies, implied_by, groups, ids2features, 0, {})
-
-        print("=" * 40)
-        print(20 in implies and 45 in implies[20])
-        print("=" * 40)
-
-        print(depths)
-
-        for k, (v, t) in parents.items():
-            if k not in root_candidates:
-                print(ids2features[k], "has parent", ids2features[v], "and is", t)
-
-        # TODO: Handle non-unique root (find largest and hang the others as mandatory childs below)
+            _, parents = cls.find_depths(root, None, {}, clauses, implies, implied_by, groups, ids2features, 0, {}, by_name=by_name)
 
         parents2childs = {}
 
@@ -197,150 +183,251 @@ class UVL:
         for parent in parents2childs:
             parents2childs[parent] = sorted(parents2childs[parent], key = lambda x: x[1])
 
-        print(parents2childs)
-
         root = root_candidates[0]
 
         dump = [(0, "features")]
         dump = cls.visit(root, 1, parents2childs, ids2features, clauses, groups, dump)
-
-
-
-
-
-            # dump = [(0, "features")]
-        #     dump, _ = cls.visit(root, clauses, implies, implied_by, groups, ids2features, 0, dump, seen)
-
-
-        # print("=" * 80)
-        # print()
-
-        ls = []
-        for indent, line in dump:
-            ls.append(f'{" " * indent * 4}{line}')
-
-        s = "\n".join(ls)
-
-
-        uvl = UVL(from_str = s)
+        s = "\n".join(f'{' ' * indent * 4}{line}' for indent, line in dump)
 
         features2ids = {v: k for k, v in ids2features.items()}
 
-        clauses_h = uvl.to_cnf(features2ids).clauses
+        # Remaining CTCs: original clauses not covered by the hierarchy
+        hier_hashes = {hash(str(sorted(c, key=abs))) for c in UVL(from_str=s).to_cnf(features2ids).clauses}
+        ctc_clauses = [c for c in clauses if hash(str(sorted(c, key=abs))) not in hier_hashes]
 
-        all_clauses = list(clauses)  # keep original for XOR detection and CTC recomputation
-
-        cache = set()
-
-        for clause in clauses_h:
-            h = hash(str(sorted(clause, key = abs)))
-
-            if h in cache:
-                continue
-
-            cache.add(h)
-
-        for clause in list(clauses):
-            h = hash(str(sorted(clause, key = abs)))
-
-            if h in cache:
-                print("HIT", clause)
-                clauses.remove(clause)
-                continue
-
-            cache.add(h)
-
-        print("Remaining:", clauses)
-
-        # Classify remaining CTCs as potential hierarchy moves
-        all_clauses_set = {tuple(sorted(c, key=abs)) for c in all_clauses}
-        for clause in clauses:
-            if len(clause) == 2:
-                a, b = sorted(clause)
-                if a < 0 and b > 0:
-                    child_id, parent_id = abs(a), b
-                    if tuple(sorted([-parent_id, child_id], key=abs)) in all_clauses_set:
-                        rel = "mandatory"
-                    elif child_id in groups.get(parent_id, set()):
-                        rel = "or/alternative group member"
-                    else:
-                        rel = "optional"
-                    print(f"  MOVE: {ids2features[child_id]} -> {ids2features[parent_id]} as {rel}")
-
-        # Apply only the first detected move
-        first_move = next(
-            ((abs(a), b, "mandatory" if tuple(sorted([-b, abs(a)], key=abs)) in all_clauses_set else "optional")
-             for clause in clauses if len(clause) == 2
-             for a, b in [sorted(clause)] if a < 0 and b > 0),
-            None
-        )
-        # if first_move:
-        #     child_id, new_parent_id, rel = first_move
-        #     print(f"  Applying: {ids2features[child_id]} -> {ids2features[new_parent_id]}")
-        #     cls._move_feature(child_id, new_parent_id, rel, parents, parents2childs, groups)
-
-        dump = [(0, "features")]
-        dump = cls.visit(root, 1, parents2childs, ids2features, all_clauses, groups, dump)
-        s = "\n".join(f'{" " * indent * 4}{line}' for indent, line in dump)
-
-        uvl = UVL(from_str=s)
-        new_cache = {hash(str(sorted(c, key=abs))) for c in uvl.to_cnf(features2ids).clauses}
-        clauses = [c for c in all_clauses if hash(str(sorted(c, key=abs))) not in new_cache]
-
-        latch_id = features2ids.get("featureLatch")
-        if latch_id:
-            print("  All clauses containing featureLatch:")
-            for clause in all_clauses:
-                if latch_id in clause or -latch_id in clause:
-                    print(f"    {[ids2features[abs(x)] if x > 0 else '!' + ids2features[abs(x)] for x in clause]}")
-
-        orig_set = {tuple(sorted(c, key=abs)) for c in all_clauses}
-        new_set  = {tuple(sorted(c, key=abs)) for c in uvl.to_cnf(features2ids).clauses + clauses}
-        equiv = "DIMACS identical" if orig_set == new_set else f"DIMACS MISMATCH: missing={len(orig_set-new_set)} extra={len(new_set-orig_set)}"
-
-        if clauses:
+        if ctc_clauses:
             s += "\n\nconstraints\n"
-
-            # Group 2-literal implications [-A, B] by A -> write as "A => B1 & B2 & ..."
             implications = {}
             other = []
-            for clause in clauses:
-                if len(clause) == 2:
-                    a, b = sorted(clause)
-                    if a < 0 and b > 0:
-                        implications.setdefault(abs(a), []).append(b)
-                        continue
-                other.append(clause)
-
+            for clause in ctc_clauses:
+                negs = [x for x in clause if x < 0]
+                pos  = [x for x in clause if x > 0]
+                if len(negs) == 1 and len(pos) == 1:
+                    implications.setdefault(abs(negs[0]), []).append(pos[0])
+                else:
+                    other.append(clause)
             for child_id, parent_ids in implications.items():
                 targets = " & ".join(ids2features[p] for p in parent_ids)
                 s += f"    {ids2features[child_id]} => {targets}\n"
-
             for clause in other:
                 parts = [f"!{ids2features[abs(x)]}" if x < 0 else ids2features[x] for x in clause]
                 s += "    " + " | ".join(parts) + "\n"
 
-            print(f"CTCs: {len(implications) + len(other)} constraint lines ({len(clauses)} raw clauses)  [{equiv}]")
-
-        # print(s)
         with open(file_out, "w+") as fp:
             fp.write(s)
 
+        if optimize:
+            cls.optimize_from_cnf(file_out, filepath, ids2features)
 
     @classmethod
-    def optimize_from_cnf(cls, uvl_file, dimacs_file, file_out):
-        """
-        Optional postprocessing step for from_cnf output.
+    def optimize_from_cnf(cls, uvl_file, dimacs_file, ids2features):
+        import copy
 
-        Finds the feature most mentioned in remaining cross-tree constraints.
-        If a CTC encodes a direct implication (A => B), moves A under B in the
-        hierarchy and removes constraints now covered by the hierarchy.
+        cnf = CNF(from_file=dimacs_file)
+        features2ids = {v: k for k, v in ids2features.items()}
+        orig_set = {tuple(sorted(c, key=abs)) for c in cnf.clauses}
 
-        Equivalence is preserved: the new remaining CTCs are recomputed as
-        original_clauses - new_hierarchy_clauses, so nothing is lost.
-        """
-        
-        #TODO
+        uvl = UVL(from_file=uvl_file)
+        builder = uvl.builder()
+        hierarchy = builder.feature_hierarchy
+        root = builder.root_feature
+
+        def get_hier_set(h):
+            return {tuple(sorted(c, key=abs)) for c in [[features2ids[root]]] + uvl._hierarchy_to_cnf(h, features2ids)}
+
+        def build_uvl_str(h):
+            hs = get_hier_set(h)
+            ctcs = [c for c in cnf.clauses if tuple(sorted(c, key=abs)) not in hs]
+            s = cls._to_uvl_string(root, h)
+            if ctcs:
+                s += "\n\nconstraints\n"
+                # Combine [-A, B], [-A, C], ... → A => B & C & ...
+                implications = {}  # child_id -> [parent_id, ...]
+                other = []
+                for clause in ctcs:
+                    negs = [x for x in clause if x < 0]
+                    pos  = [x for x in clause if x > 0]
+                    if len(negs) == 1 and len(pos) == 1:
+                        implications.setdefault(abs(negs[0]), []).append(pos[0])
+                    else:
+                        other.append(clause)
+                for child_id, parent_ids in implications.items():
+                    child = ids2features[child_id]
+                    parents = " & ".join(ids2features[p] for p in parent_ids)
+                    s += f"    {child} => {parents}\n"
+                for clause in other:
+                    parts = [f"!{ids2features[abs(x)]}" if x < 0 else ids2features[x] for x in clause]
+                    s += "    " + " | ".join(parts) + "\n"
+            compacted = len(implications) + len(other)
+            return s, compacted
+
+        def count_compacted_ctcs(h):
+            hs = get_hier_set(h)
+            ctcs = [c for c in cnf.clauses if tuple(sorted(c, key=abs)) not in hs]
+            implications = set()
+            other = 0
+            for clause in ctcs:
+                negs = [x for x in clause if x < 0]
+                pos  = [x for x in clause if x > 0]
+                if len(negs) == 1 and len(pos) == 1:
+                    implications.add(abs(negs[0]))
+                else:
+                    other += 1
+            return len(implications) + other
+
+        # Precompute depths from root
+        def compute_depths():
+            depths = {}
+            queue = [(root, 0)]
+            while queue:
+                f, d = queue.pop(0)
+                if f in depths:
+                    continue
+                depths[f] = d
+                for child, _ in hierarchy.get(f, {}).get("children", []):
+                    queue.append((child, d + 1))
+            return depths
+
+        # Candidates: 2-literal CTCs [-A, B] => try moving A under B
+        # Filters applied:
+        #   - skip mandatory pairs (bidirectional — direction is ambiguous)
+        #   - skip if new parent has real OR/XOR groups (preserves group structure)
+        #   - skip if child is currently in an OR/XOR group at old parent (preserves source group)
+        #   - only move upward: new parent must be strictly shallower than current parent
+        #   - one move per child: pick the shallowest valid new parent
+        raw_candidates = {}  # child_name -> (new_parent_depth, parent_name)
+        depths = compute_depths()
+        for clause in cnf.clauses:
+            if len(clause) != 2:
+                continue
+            negs = [x for x in clause if x < 0]
+            pos  = [x for x in clause if x > 0]
+            if len(negs) != 1 or len(pos) != 1:
+                continue
+            a, b = negs[0], pos[0]
+            if tuple(sorted(clause, key=abs)) in get_hier_set(hierarchy):
+                continue
+            child_name  = ids2features.get(abs(a))
+            parent_name = ids2features.get(b)
+            if not child_name or not parent_name:
+                continue
+            if child_name not in hierarchy or parent_name not in hierarchy:
+                continue
+            if hierarchy[child_name]["parent"] == parent_name:
+                continue
+            # Skip if new parent has real OR/XOR groups (would destroy group structure)
+            if any(gt in ("or", "xor") for gt, _ in hierarchy[parent_name]["groups"]):
+                continue
+            # Cycle check
+            ancestor, cycle = parent_name, False
+            while ancestor:
+                if ancestor == child_name:
+                    cycle = True
+                    break
+                ancestor = hierarchy.get(ancestor, {}).get("parent")
+            if cycle:
+                continue
+            # Keep only shallowest new parent per child
+            d = depths.get(parent_name, 9999)
+            if child_name not in raw_candidates or d < raw_candidates[child_name][0]:
+                raw_candidates[child_name] = (d, parent_name)
+
+        # Group candidates by new parent, order largest groups first (most CTC reduction potential)
+        groups_by_parent = {}
+        for child, (_, parent) in raw_candidates.items():
+            groups_by_parent.setdefault(parent, []).append(child)
+        groups_by_parent = sorted(groups_by_parent.items(), key=lambda x: -len(x[1]))
+
+        def apply_single_move(h, child_name, new_parent_name):
+            child_id      = features2ids[child_name]
+            new_parent_id = features2ids[new_parent_name]
+
+            old_parent = h[child_name]["parent"]
+            if old_parent and old_parent in h:
+                h[old_parent]["children"] = [
+                    (c, t) for c, t in h[old_parent]["children"] if c != child_name
+                ]
+                old_parent_id = features2ids[old_parent]
+                new_groups = []
+                for gt, members in h[old_parent]["groups"]:
+                    if child_name not in members:
+                        new_groups.append((gt, members))
+                        continue
+                    for m in [x for x in members if x != child_name]:
+                        mid = features2ids[m]
+                        rel = "mandatory" if tuple(sorted([-old_parent_id, mid], key=abs)) in orig_set else "optional"
+                        h[old_parent]["children"] = [
+                            (c, rel if c == m else t) for c, t in h[old_parent]["children"]
+                        ]
+                h[old_parent]["groups"] = new_groups
+
+            seen = {c for c, _ in h[new_parent_name]["children"]}
+            for _, members in h[new_parent_name]["groups"]:
+                for m in members:
+                    if m not in seen:
+                        seen.add(m)
+                        h[new_parent_name]["children"].append((m, "optional"))
+            h[new_parent_name]["groups"] = []
+
+            h[new_parent_name]["children"] = [
+                (c, "mandatory" if tuple(sorted([-new_parent_id, features2ids[c]], key=abs)) in orig_set else ("optional" if t == "group" else t))
+                for c, t in h[new_parent_name]["children"]
+            ]
+
+            rel = "mandatory" if tuple(sorted([-new_parent_id, child_id], key=abs)) in orig_set else "optional"
+            h[child_name]["parent"] = new_parent_name
+            h[new_parent_name]["children"].append((child_name, rel))
+
+        applied = 0
+        for new_parent_name, children in groups_by_parent:
+            ctcs_before = count_compacted_ctcs(hierarchy)
+            snapshot = copy.deepcopy(hierarchy)
+
+            moved = []
+            for child_name in children:
+                # Cycle check against current state
+                ancestor, cycle = new_parent_name, False
+                while ancestor:
+                    if ancestor == child_name:
+                        cycle = True
+                        break
+                    ancestor = hierarchy.get(ancestor, {}).get("parent")
+                if cycle:
+                    continue
+                if hierarchy[child_name]["parent"] == new_parent_name:
+                    continue
+                apply_single_move(hierarchy, child_name, new_parent_name)
+                moved.append(child_name)
+
+            if not moved:
+                continue
+
+            # Reject if hier_set ⊄ orig_set; groups>=2 must not increase CTCs; singletons must decrease
+            subset_ok = get_hier_set(hierarchy).issubset(orig_set)
+            ctcs_after = count_compacted_ctcs(hierarchy)
+            if not subset_ok or (len(moved) >= 2 and ctcs_after > ctcs_before) or (len(moved) == 1 and ctcs_after >= ctcs_before):
+                hierarchy = snapshot
+                continue
+
+            applied += len(moved)
+
+        print(f"optimize_from_cnf: {applied} moves applied")
+
+        if applied == 0:
+            return  # file unchanged
+
+        uvl_str, n_ctcs = build_uvl_str(hierarchy)
+        with open(uvl_file, "w+") as fp:
+            fp.write(uvl_str)
+
+        result_set = {tuple(sorted(c, key=abs)) for c in UVL(from_str=uvl_str).to_cnf(features2ids).clauses}
+        missing = orig_set - result_set
+        extra   = result_set - orig_set
+        if missing or extra:
+            print(f"optimize_from_cnf: DIMACS check FAIL: missing={len(missing)} extra={len(extra)}")
+        else:
+            print(f"optimize_from_cnf: {n_ctcs} CTCs remaining, DIMACS PASS ({len(orig_set)} clauses)")
+
 
     @classmethod
     def _to_uvl_string(cls, root_feature, feature_hierarchy):
@@ -353,8 +440,11 @@ class UVL:
         lines.append((indent, feature))
         info = feature_hierarchy.get(feature, {"children": [], "groups": []})
 
-        mandatory = [c for c, t in info["children"] if t == "mandatory"]
-        optional  = [c for c, t in info["children"] if t == "optional"]
+        real_groups = [(gt, ms) for gt, ms in info["groups"] if gt in ("or", "xor")]
+        group_members = {m for _, ms in real_groups for m in ms}
+
+        mandatory = [c for c, t in info["children"] if t == "mandatory" and c not in group_members]
+        optional  = [c for c, t in info["children"] if t == "optional" and c not in group_members]
 
         if mandatory:
             lines.append((indent + 1, "mandatory"))
@@ -366,7 +456,7 @@ class UVL:
             for child in optional:
                 cls._serialize_feature(child, feature_hierarchy, indent + 2, lines)
 
-        for group_type, members in info["groups"]:
+        for group_type, members in real_groups:
             keyword = "or" if group_type == "or" else "alternative"
             lines.append((indent + 1, keyword))
             for member in members:
@@ -374,53 +464,29 @@ class UVL:
 
     @classmethod
     def visit(cls, feature, indent, parents2childs, ids2features, clauses, groups, dump):
-
-        # print("Visiting", feature, ids2features[feature])
         dump.append((indent, ids2features[feature]))
 
         childs = parents2childs.get(feature, [])
 
-        # print(ids2features[feature], [(ids2features[child], child, type) for child, type in childs])
-        mandatory = [child for child, type in childs if type == "mandatory"]
-        optional = [child for child, type in childs if type == "optional"]
-
-
         if feature in groups:
-
             childs_l = list(groups[feature])
-
-            is_xor = True
-            for i, child1 in enumerate(childs_l):
-                for child2 in childs_l[i + 1:]:
-
-                    # Inefficient
-                    if not sorted([-child1, -child2], key = abs) in clauses:
-                        is_xor = False
-                        break
-                if not is_xor:
-                    break
-
-            if is_xor:
-                dump.append((indent + 1, "alternative"))
-            else:
-                dump.append((indent + 1, "or"))
-
+            is_xor = all(
+                sorted([-c1, -c2], key=abs) in clauses
+                for i, c1 in enumerate(childs_l)
+                for c2 in childs_l[i + 1:]
+            )
+            dump.append((indent + 1, "alternative" if is_xor else "or"))
             for child in childs_l:
                 dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
-
         else:
-            mandatory = [child for child, type in childs if type == "mandatory"]
-            optional = [child for child, type in childs if type == "optional"]
-
+            mandatory = [child for child, t in childs if t == "mandatory"]
+            optional  = [child for child, t in childs if t == "optional"]
             if mandatory:
                 dump.append((indent + 1, "mandatory"))
-                
                 for child in mandatory:
                     dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
-
             if optional:
                 dump.append((indent + 1, "optional"))
-
                 for child in optional:
                     dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
 
@@ -432,34 +498,25 @@ class UVL:
         if handled is None:
             handled = set()
 
-        print("Feature:", feature, ids2features[feature])
-
         childs = set()
 
         if feature in or_parents:
             or_childs = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
             childs.update(or_childs)
-            print("OR:", [(f, ids2features[f]) for f in or_childs])
         elif feature in xor_parents:
             xor_childs = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
             childs.update(xor_childs)
-            print("XOR:", [(f, ids2features[f]) for f in xor_childs])
         else:
             mandatory = set(c for c in implies[feature] if feature in implies[c]).difference(handled)
             optional = set(k for k,v in implies.items() if feature in v).difference(handled).difference(mandatory)
             childs.update(mandatory)
             childs.update(optional)
-            print("mandatory children:", [(f, ids2features[f]) for f in mandatory])
-            print("optional children:", [ids2features[f] for f in optional])
-        print()
 
         handled.add(feature)
 
         for c in childs:
             if c in handled:
                 continue
-
-            print("-->", c)
 
             handled = cls.gather(c, implies, or_parents, xor_parents, ids2features, handled)
 
@@ -569,7 +626,6 @@ class UVL:
                 self._constraints_to_cnf(self.boolean_constraints, features2ids)
             )
 
-        # TODO: This should be add to some logging
         if verbose_info and self.arithmetic_constraints:
             print(
                 f"Info: Ignored {len(self.arithmetic_constraints)} arithmetic constraints"

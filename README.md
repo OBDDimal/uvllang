@@ -1,174 +1,104 @@
 # uvllang
 
-A Python parser for the Universal Variability Language (UVL) with support for both Lark (default) and ANTLR parsers. In addition, `uvllang` supports conversion of UVL to CNF / SMT.
+A Python parser for the Universal Variability Language (UVL). Supports conversion to CNF (DIMACS), SMT-LIB 2, and recovery of UVL models from DIMACS files.
+
+Two parser backends are available: Lark (default, pure Python) and ANTLR.
 
 ## Installation
 
 ```bash
-# Install with Lark parser (default, pure Python)
 pip install uvllang
 
-# Install with both Lark and ANTLR parsers
+# With ANTLR parser support
 pip install uvllang[antlr]
 ```
 
-## Usage
+## CLI tools
 
-### Basic Usage
+### uvl2cnf — UVL to DIMACS CNF
 
-```python
-from uvllang import UVL
-
-# Parse a UVL file with Lark (default)
-model = UVL(from_file="examples/automotive01.uvl")
-
-# Or use ANTLR parser
-model = UVL(from_file="examples/automotive01.uvl", use_antlr = True)
-
-# Access features
-print(f"Number of features:", len(model.features))
-
-# Access constraints
-print("All constraints:", len(model.constraints))
-print("Boolean constraints:", len(model.boolean_constraints))
-print("Arithmetic constraints:", len(model.arithmetic_constraints))
+```bash
+uvl2cnf model.uvl                 # writes model.dimacs
+uvl2cnf model.uvl output.dimacs   # explicit output path
+uvl2cnf model.uvl -v              # list ignored non-Boolean constraints
+uvl2cnf model.uvl --antlr         # use ANTLR parser
 ```
 
-### CNF Conversion
+### uvl2smt — UVL to SMT-LIB 2
 
-Convert feature models to Conjunctive Normal Form (CNF) for SAT solvers:
+```bash
+uvl2smt model.uvl                 # writes model.smt2
+uvl2smt model.uvl output.smt2
+uvl2smt model.uvl -v              # show model statistics
+uvl2smt model.uvl --antlr
+```
+
+### any2uvl — DIMACS CNF to UVL
+
+Recovers a UVL feature model from a DIMACS file. Hierarchy is reconstructed via a spanning-tree heuristic; remaining clauses become cross-tree constraints.
+
+```bash
+any2uvl model.dimacs              # writes model_recovered.uvl
+any2uvl model.dimacs output.uvl
+any2uvl --optimize model.dimacs   # run CTC-reduction optimiser after recovery
+any2uvl --byname model.dimacs     # break hierarchy tie-breaks by feature name similarity
+```
+
+The `--optimize` pass groups features that share common implied parents and moves them into the hierarchy, reducing cross-tree constraints where valid (verified by DIMACS equivalence check).
+
+`--byname` affects the initial spanning-tree construction: when two candidate parents are at equal depth, the one whose name is most similar to the child (by edit-distance ratio) wins. Combine with `--optimize` for best results.
+
+## Python API
 
 ```python
 from uvllang import UVL
 
-# Parse UVL file
 model = UVL(from_file="model.uvl")
 
-# Convert to CNF (returns PySAT CNF object)
+# CNF (PySAT CNF object)
 cnf = model.to_cnf()
 cnf.to_file("output.dimacs")
-```
 
-### SMT-LIB 2 Conversion
-
-Convert feature models to SMT-LIB 2 format for SMT solvers (supports arithmetic constraints, types, and aggregates):
-
-```python
-from uvllang import UVL
-
-# Parse UVL file with arithmetic constraints
-model = UVL(from_file="model.uvl")
-
-# Convert to SMT-LIB 2 format
-smt_content = model.to_smt()
-
-# Save to file
+# SMT-LIB 2
+smt = model.to_smt()
 with open("output.smt2", "w") as f:
-    f.write(smt_content)
+    f.write(smt)
 
-# Or use Z3 directly
-import z3
-
-solver = z3.Solver()
-solver.from_string(smt_content)
-result = solver.check()
-
-print(result)  # sat, unsat, or unknown
-```
-
-**SMT-LIB 2 Features:**
-- Boolean feature selection constraints
-- Arithmetic constraints with integer and real types
-- String features and length constraints
-- Aggregate functions: `sum(attr)`, `avg(attr)`, `len(feature)`
-- Feature attributes and typed declarations
-
-### Command Line Interface
-
-```bash
-# Basic conversion (uses Lark)
-uvl2cnf model.uvl
-
-# Specify output file
-uvl2cnf model.uvl output.dimacs
-
-# Verbose mode (lists ignored non-Boolean constraints)
-uvl2cnf model.uvl -v
-
-# Use ANTLR parser (requires: pip install uvllang[antlr])
-uvl2cnf model.uvl --antlr
-```
-
-**SMT-LIB 2 conversion:**
-
-```bash
-# Basic conversion (uses Lark)
-uvl2smt model.uvl
-
-# Specify output file
-uvl2smt model.uvl output.smt2
-
-# Verbose mode (shows model statistics)
-uvl2smt model.uvl -v
-
-# Use ANTLR parser
-uvl2smt model.uvl --antlr
-
-# Solve with Z3
-uvl2smt model.uvl model.smt2 && z3 model.smt2
+# DIMACS → UVL recovery
+UVL.from_cnf("model.dimacs", "recovered.uvl", optimize=True, by_name=True)
 ```
 
 ## Dependencies
 
-**Core dependencies** (always installed):
-- `lark`: Lark parser
-- `sympy`: Symbolic mathematics for Boolean constraint processing
-- `python-sat`: SAT solver library for CNF handling
-
-**Optional dependencies**:
-- `antlr4-python3-runtime`: ANTLR4 parser runtime (install with: `pip install uvllang[antlr]`)
-- `z3-solver`: Z3 SMT solver for solving SMT-LIB 2 constraints (install with: `pip install z3-solver`)
-
-Both parsers provide identical functionality. Lark is used by default for easier installation and pure Python compatibility.
+- `lark` — default parser
+- `python-sat` — CNF handling
+- `sympy` — Boolean constraint processing
+- `antlr4-python3-runtime` — optional, required for `--antlr`
+- `z3-solver` — optional, for solving SMT output
 
 ## Testing
 
 ```bash
-# Install development dependencies
 pip install -e .[dev]
-
-# Run tests
-python -m pytest tests/
-```
-
-## Development
-
-```bash
-# Generate parsers from grammar files (ANTLR)
-python generate_parsers.py
-
-# Build
-python -m build
+pytest tests/
 ```
 
 ## Citation
 
-If you use UVL in your research, please cite:
-
 ```bibtex
 @article{UVL2024,
-  title     = {UVL: Feature modelling with the Universal Variability Language},
-  journal   = {Journal of Systems and Software},
-  volume    = {225},
-  pages     = {112326},
-  year      = {2025},
-  doi       = {https://doi.org/10.1016/j.jss.2024.112326},
-  author    = {David Benavides and Chico Sundermann and Kevin Feichtinger and José A. Galindo and Rick Rabiser and Thomas Thüm}
+  title   = {UVL: Feature modelling with the Universal Variability Language},
+  journal = {Journal of Systems and Software},
+  volume  = {225},
+  pages   = {112326},
+  year    = {2025},
+  doi     = {https://doi.org/10.1016/j.jss.2024.112326},
+  author  = {David Benavides and Chico Sundermann and Kevin Feichtinger and José A. Galindo and Rick Rabiser and Thomas Thüm}
 }
 ```
 
 ## Links
 
-- [Official UVL Parser](https://github.com/Universal-Variability-Language/uvl-parser)
-- [UVL Models Repository](https://github.com/Universal-Variability-Language/uvl-models)
+- [UVL Parser](https://github.com/Universal-Variability-Language/uvl-parser)
+- [UVL Models](https://github.com/Universal-Variability-Language/uvl-models)
 - [UVL Website](https://universal-variability-language.github.io/)

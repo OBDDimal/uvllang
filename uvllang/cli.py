@@ -35,11 +35,6 @@ Examples:
         help="Show detailed information about ignored constraints and types",
     )
     parser.add_argument(
-        "--lark",
-        action="store_true",
-        help="Use Lark parser (default)",
-    )
-    parser.add_argument(
         "--antlr",
         action="store_true",
         help="Use ANTLR parser instead of Lark",
@@ -47,7 +42,6 @@ Examples:
 
     args = parser.parse_args()
 
-    # Determine which parser to use (Lark is default)
     use_antlr = args.antlr
 
     if args.verbose:
@@ -127,11 +121,6 @@ Examples:
         help="Show detailed information about the model",
     )
     parser.add_argument(
-        "--lark",
-        action="store_true",
-        help="Use Lark parser (default)",
-    )
-    parser.add_argument(
         "--antlr",
         action="store_true",
         help="Use ANTLR parser instead of Lark",
@@ -186,13 +175,13 @@ Examples:
 def any2uvl():
     """CLI tool for converting CNF/DIMACS files to UVL format."""
     parser = argparse.ArgumentParser(
-        description="Convert a CNF/SMT file to UVL format.",
+        description="Convert a DIMACS CNF file to UVL format.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   any2uvl model.dimacs                 # Convert to model_recovered.uvl
   any2uvl model.dimacs output.uvl      # Convert to specific output file
-  any2uvl model.dimacs -v              # Verbose output
+  any2uvl --optimize model.dimacs      # Run CTC-reduction optimiser after recovery
         """,
     )
 
@@ -212,6 +201,11 @@ Examples:
         "--optimize",
         action="store_true",
         help="Run CTC-reduction postprocessing after recovery",
+    )
+    parser.add_argument(
+        "--byname",
+        action="store_true",
+        help="Break parent-assignment ties by feature name similarity",
     )
 
     args = parser.parse_args()
@@ -233,15 +227,7 @@ Examples:
         if args.verbose:
             print(f"Converting {input_file} to UVL format...")
 
-        if args.optimize:
-            import tempfile, shutil
-            with tempfile.NamedTemporaryFile(suffix=".uvl", delete=False) as tmp:
-                tmp_path = tmp.name
-            UVL.from_cnf(input_file, tmp_path)
-            UVL.optimize_from_cnf(tmp_path, input_file, output_file)
-            os.unlink(tmp_path)
-        else:
-            UVL.from_cnf(input_file, output_file)
+        UVL.from_cnf(input_file, output_file, optimize=args.optimize, by_name=args.byname)
 
         print(f"Successfully converted to UVL format: {output_file}")
 
