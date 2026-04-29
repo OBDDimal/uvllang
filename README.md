@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" alt="uvllang logo" width="220" />
+</p>
+
 # uvllang
 
 A Python parser for the Universal Variability Language (UVL). Supports conversion to CNF (DIMACS), SMT-LIB 2, and recovery of UVL models from DIMACS files.
