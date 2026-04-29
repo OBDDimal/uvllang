@@ -208,6 +208,11 @@ Examples:
         action="store_true",
         help="Show detailed information about the conversion",
     )
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Run CTC-reduction postprocessing after recovery",
+    )
 
     args = parser.parse_args()
 
@@ -228,7 +233,15 @@ Examples:
         if args.verbose:
             print(f"Converting {input_file} to UVL format...")
 
-        UVL.from_cnf(input_file, output_file)
+        if args.optimize:
+            import tempfile, shutil
+            with tempfile.NamedTemporaryFile(suffix=".uvl", delete=False) as tmp:
+                tmp_path = tmp.name
+            UVL.from_cnf(input_file, tmp_path)
+            UVL.optimize_from_cnf(tmp_path, input_file, output_file)
+            os.unlink(tmp_path)
+        else:
+            UVL.from_cnf(input_file, output_file)
 
         print(f"Successfully converted to UVL format: {output_file}")
 

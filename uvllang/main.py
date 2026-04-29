@@ -64,8 +64,11 @@ class UVL:
         if parent in groups and feature not in groups[parent]:
             # maintain groups whenever possible
             pass
-        elif old_depth == depth and type and type == "mandatory":
-            # maintain mandatory whenever possible
+        elif old_depth == depth and type and type == "mandatory" and parent not in groups:
+            # maintain mandatory, but not if the new parent is a group parent (group wins)
+            pass
+        elif type == "group" and parent not in groups:
+            # feature is already placed as a group member; skip assignment from non-group parent
             pass
         else:
 
@@ -94,6 +97,22 @@ class UVL:
 
 
 
+
+    @classmethod
+    def _move_feature(cls, child_id, new_parent_id, rel, parents, parents2childs, groups):
+        old_parent_id, old_type = parents.get(child_id, (None, None))
+
+        # Remove from old parent
+        if old_parent_id is not None:
+            parents2childs[old_parent_id] = [
+                (c, t) for c, t in parents2childs.get(old_parent_id, [])
+                if c != child_id
+            ]
+            if old_type == "group" and old_parent_id in groups:
+                groups[old_parent_id].discard(child_id)
+
+        parents[child_id] = (new_parent_id, rel)
+        parents2childs.setdefault(new_parent_id, []).append((child_id, rel))
 
     @classmethod
     def from_cnf(cls, filepath, file_out):
@@ -138,6 +157,8 @@ class UVL:
                     parent = abs(xs[0])
                     groups[parent] = {x for x in clause if x > 0}
 
+
+        print("groups", groups)
 
         implied_by = {}
 
@@ -207,6 +228,8 @@ class UVL:
 
         clauses_h = uvl.to_cnf(features2ids).clauses
 
+        all_clauses = list(clauses)  # keep original for XOR detection and CTC recomputation
+
         cache = set()
 
         for clause in clauses_h:
@@ -229,27 +252,125 @@ class UVL:
 
         print("Remaining:", clauses)
 
+        # Classify remaining CTCs as potential hierarchy moves
+        all_clauses_set = {tuple(sorted(c, key=abs)) for c in all_clauses}
+        for clause in clauses:
+            if len(clause) == 2:
+                a, b = sorted(clause)
+                if a < 0 and b > 0:
+                    child_id, parent_id = abs(a), b
+                    if tuple(sorted([-parent_id, child_id], key=abs)) in all_clauses_set:
+                        rel = "mandatory"
+                    elif child_id in groups.get(parent_id, set()):
+                        rel = "or/alternative group member"
+                    else:
+                        rel = "optional"
+                    print(f"  MOVE: {ids2features[child_id]} -> {ids2features[parent_id]} as {rel}")
+
+        # Apply only the first detected move
+        first_move = next(
+            ((abs(a), b, "mandatory" if tuple(sorted([-b, abs(a)], key=abs)) in all_clauses_set else "optional")
+             for clause in clauses if len(clause) == 2
+             for a, b in [sorted(clause)] if a < 0 and b > 0),
+            None
+        )
+        # if first_move:
+        #     child_id, new_parent_id, rel = first_move
+        #     print(f"  Applying: {ids2features[child_id]} -> {ids2features[new_parent_id]}")
+        #     cls._move_feature(child_id, new_parent_id, rel, parents, parents2childs, groups)
+
+        dump = [(0, "features")]
+        dump = cls.visit(root, 1, parents2childs, ids2features, all_clauses, groups, dump)
+        s = "\n".join(f'{" " * indent * 4}{line}' for indent, line in dump)
+
+        uvl = UVL(from_str=s)
+        new_cache = {hash(str(sorted(c, key=abs))) for c in uvl.to_cnf(features2ids).clauses}
+        clauses = [c for c in all_clauses if hash(str(sorted(c, key=abs))) not in new_cache]
+
+        latch_id = features2ids.get("featureLatch")
+        if latch_id:
+            print("  All clauses containing featureLatch:")
+            for clause in all_clauses:
+                if latch_id in clause or -latch_id in clause:
+                    print(f"    {[ids2features[abs(x)] if x > 0 else '!' + ids2features[abs(x)] for x in clause]}")
+
+        orig_set = {tuple(sorted(c, key=abs)) for c in all_clauses}
+        new_set  = {tuple(sorted(c, key=abs)) for c in uvl.to_cnf(features2ids).clauses + clauses}
+        equiv = "DIMACS identical" if orig_set == new_set else f"DIMACS MISMATCH: missing={len(orig_set-new_set)} extra={len(new_set-orig_set)}"
+
         if clauses:
             s += "\n\nconstraints\n"
 
+            # Group 2-literal implications [-A, B] by A -> write as "A => B1 & B2 & ..."
+            implications = {}
+            other = []
             for clause in clauses:
+                if len(clause) == 2:
+                    a, b = sorted(clause)
+                    if a < 0 and b > 0:
+                        implications.setdefault(abs(a), []).append(b)
+                        continue
+                other.append(clause)
 
-                constraint = []
+            for child_id, parent_ids in implications.items():
+                targets = " & ".join(ids2features[p] for p in parent_ids)
+                s += f"    {ids2features[child_id]} => {targets}\n"
 
-                for x in clause:
-                    if x < 0:
-                        constraint.append(f"!{ids2features[abs(x)]}")
-                    else:
-                        constraint.append(f"{ids2features[abs(x)]}")
+            for clause in other:
+                parts = [f"!{ids2features[abs(x)]}" if x < 0 else ids2features[x] for x in clause]
+                s += "    " + " | ".join(parts) + "\n"
 
-                constraint = " | ".join(constraint)
-
-                s += " " * 4 + constraint + "\n"
+            print(f"CTCs: {len(implications) + len(other)} constraint lines ({len(clauses)} raw clauses)  [{equiv}]")
 
         # print(s)
         with open(file_out, "w+") as fp:
             fp.write(s)
 
+
+    @classmethod
+    def optimize_from_cnf(cls, uvl_file, dimacs_file, file_out):
+        """
+        Optional postprocessing step for from_cnf output.
+
+        Finds the feature most mentioned in remaining cross-tree constraints.
+        If a CTC encodes a direct implication (A => B), moves A under B in the
+        hierarchy and removes constraints now covered by the hierarchy.
+
+        Equivalence is preserved: the new remaining CTCs are recomputed as
+        original_clauses - new_hierarchy_clauses, so nothing is lost.
+        """
+        
+        #TODO
+
+    @classmethod
+    def _to_uvl_string(cls, root_feature, feature_hierarchy):
+        lines = [(0, "features")]
+        cls._serialize_feature(root_feature, feature_hierarchy, 1, lines)
+        return "\n".join(f'{" " * indent * 4}{line}' for indent, line in lines)
+
+    @classmethod
+    def _serialize_feature(cls, feature, feature_hierarchy, indent, lines):
+        lines.append((indent, feature))
+        info = feature_hierarchy.get(feature, {"children": [], "groups": []})
+
+        mandatory = [c for c, t in info["children"] if t == "mandatory"]
+        optional  = [c for c, t in info["children"] if t == "optional"]
+
+        if mandatory:
+            lines.append((indent + 1, "mandatory"))
+            for child in mandatory:
+                cls._serialize_feature(child, feature_hierarchy, indent + 2, lines)
+
+        if optional:
+            lines.append((indent + 1, "optional"))
+            for child in optional:
+                cls._serialize_feature(child, feature_hierarchy, indent + 2, lines)
+
+        for group_type, members in info["groups"]:
+            keyword = "or" if group_type == "or" else "alternative"
+            lines.append((indent + 1, keyword))
+            for member in members:
+                cls._serialize_feature(member, feature_hierarchy, indent + 2, lines)
 
     @classmethod
     def visit(cls, feature, indent, parents2childs, ids2features, clauses, groups, dump):
