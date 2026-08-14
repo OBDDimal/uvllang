@@ -11,6 +11,15 @@ import tempfile
 from uvllang import UVL
 
 
+def _cnf_satisfied(clauses, assignment):
+    """assignment: dict of 1-based variable id -> bool. True if every clause
+    has at least one satisfied literal under the given assignment."""
+    return all(
+        any((lit > 0) == assignment[abs(lit)] for lit in clause)
+        for clause in clauses
+    )
+
+
 # Test data for all example files
 EXAMPLE_FILES = [
     {
@@ -305,6 +314,85 @@ features
             len(implication_constraints) > 0
         ), "Should have implication (=>) constraints"
 
+    @pytest.mark.parametrize(
+        "constraint_text", ["A <=> B", "A<=>B", "A <=>B", "A<=> B"]
+    )
+    def test_cnf_equivalence_constraint(self, use_antlr, constraint_text):
+        """Regression: <=> must not be mistaken for an arithmetic comparison.
+
+        _constraints_to_cnf used to strip only "=>" from the constraint text
+        before checking for stray comparison operators; stripping "=>" out
+        of "<=>" leaves a "<" behind, which made every equivalence
+        constraint get silently skipped as an "arithmetic comparison" --
+        regardless of whitespace around the operator.
+        """
+        uvl_content = f"""namespace Test
+
+features
+    ARoot
+        optional
+            A
+            B
+
+constraints
+    {constraint_text}
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
+            f.write(uvl_content)
+            temp_file = f.name
+
+        try:
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            assert len(model.boolean_constraints) == 1
+            assert len(model.arithmetic_constraints) == 0
+
+            features2ids = {"ARoot": 1, "A": 2, "B": 3}
+            cnf = model.to_cnf(features2ids=features2ids)
+
+            for a_val in (True, False):
+                for b_val in (True, False):
+                    assignment = {1: True, 2: a_val, 3: b_val}
+                    expected = a_val == b_val
+                    assert _cnf_satisfied(cnf.clauses, assignment) == expected, (
+                        f"A={a_val} B={b_val}: expected equivalence to hold={expected}"
+                    )
+        finally:
+            os.unlink(temp_file)
+
+    def test_cnf_negated_equivalence_constraint(self, use_antlr):
+        """Regression companion: negated equivalence must also parse and
+        convert correctly (exercises the EQUIVALENCE case in NNF conversion,
+        not just the parser)."""
+        uvl_content = """namespace Test
+
+features
+    ARoot
+        optional
+            A
+            B
+
+constraints
+    !(A <=> B)
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
+            f.write(uvl_content)
+            temp_file = f.name
+
+        try:
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            features2ids = {"ARoot": 1, "A": 2, "B": 3}
+            cnf = model.to_cnf(features2ids=features2ids)
+
+            for a_val in (True, False):
+                for b_val in (True, False):
+                    assignment = {1: True, 2: a_val, 3: b_val}
+                    expected = a_val != b_val
+                    assert _cnf_satisfied(cnf.clauses, assignment) == expected, (
+                        f"A={a_val} B={b_val}: expected XOR to hold={expected}"
+                    )
+        finally:
+            os.unlink(temp_file)
+
     def test_aggregate_functions_detected(self, use_antlr):
         """Test that aggregate functions are detected in constraints."""
         aggregate_file = os.path.join(
@@ -328,3 +416,28 @@ features
         assert "B.Price" in constraints_text
         assert "B.Fun" in constraints_text
         assert "C.Fun" in constraints_text
+
+
+def test_automotive02v4_equivalence_constraints_not_skipped(capsys):
+    """Regression test for a real-world model: automotive02v4.uvl has ~99
+    "A <=> B" equivalence constraints. Before the fix, every one of them was
+    silently dropped from the CNF encoding as a false-positive "arithmetic
+    comparison", because stripping "=>" out of "<=>" leaves a stray "<".
+    Only run against the default (Lark) parser -- this file is large enough
+    that parsing it is already the dominant cost of this test.
+    """
+    example_file = os.path.join(
+        os.path.dirname(__file__), "..", "examples", "automotive02v4.uvl"
+    )
+    model = UVL(from_file=example_file)
+
+    equivalence_constraints = [c for c in model.boolean_constraints if "<=>" in c]
+    assert len(equivalence_constraints) > 0, "Should have <=> constraints"
+
+    capsys.readouterr()  # discard any output from parsing/loading
+    model.to_cnf(verbose_info=True)
+    captured = capsys.readouterr()
+    assert "arithmetic comparison" not in captured.out, (
+        "Equivalence (<=>) constraints must not be skipped as arithmetic comparisons:\n"
+        + captured.out
+    )

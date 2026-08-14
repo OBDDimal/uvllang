@@ -207,6 +207,11 @@ Examples:
         action="store_true",
         help="Break parent-assignment ties by feature name similarity",
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="After --optimize, reparse the written file and check it's still equivalent to the input DIMACS",
+    )
 
     args = parser.parse_args()
 
@@ -227,7 +232,7 @@ Examples:
         if args.verbose:
             print(f"Converting {input_file} to UVL format...")
 
-        UVL.from_cnf(input_file, output_file, optimize=args.optimize, by_name=args.byname)
+        UVL.from_cnf(input_file, output_file, optimize=args.optimize, by_name=args.byname, verify=args.verify)
 
         print(f"Successfully converted to UVL format: {output_file}")
 

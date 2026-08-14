@@ -52,51 +52,59 @@ class UVL:
         self._parse()
 
     @classmethod
-    def find_depths(cls, feature, parent, parents, clauses, implies, implied_by, groups, ids2features, depth, depths, by_name=False):
+    def find_depths(cls, root, implies, implied_by, groups, ids2features, by_name=False):
+        # Every edge in the implication graph carries unit weight, so the
+        # shallowest-parent placement this function computes is exactly a
+        # shortest-path assignment -- which plain BFS finds in one O(V+E)
+        # pass, visiting each feature exactly once. The previous
+        # implementation was a recursive DFS that re-walked a node's whole
+        # subtree every time a new equal-or-shorter path reached it, which
+        # is redundant (BFS already guarantees the first visit is optimal)
+        # and blew up combinatorially on graphs with many parallel paths,
+        # such as the large alternative-group structures in automotive02v4.
+        from collections import deque
 
-        _, type = parents.get(feature, (None, None))
+        depths = {root: 0}
+        queue = deque([root])
+        while queue:
+            f = queue.popleft()
+            d = depths[f]
+            for child in sorted(implied_by.get(f, ())):
+                if child not in depths:
+                    depths[child] = d + 1
+                    queue.append(child)
 
-        if feature in depths:
-            old_depth = depths[feature]
-        else:
-            old_depth = -1
+        # Parent selection is now a separate pass, done once per feature
+        # over just its true-shortest-depth candidates: prefer a genuine
+        # group edge, then a mandatory (biconditional) edge, then fall
+        # back to the best (or, without --by-name, simply the last in a
+        # deterministic order) optional candidate -- mirroring the
+        # priority the old incremental version enforced via ordering.
+        parents = {}
+        for feature, d in depths.items():
+            if feature == root:
+                continue
 
-        if parent in groups and feature not in groups[parent]:
-            # maintain groups whenever possible
-            pass
-        elif old_depth == depth and type and type == "mandatory" and parent not in groups:
-            # maintain mandatory, but not if the new parent is a group parent (group wins)
-            pass
-        elif type == "group" and parent not in groups:
-            # feature is already placed as a group member; skip assignment from non-group parent
-            pass
-        else:
-            depths[feature] = min(depths.get(feature, depth), depth)
+            candidates = [p for p in implies.get(feature, ()) if depths.get(p) == d - 1]
+            if not candidates:
+                continue
 
-            is_tie = old_depth == depths[feature]
-            if old_depth == -1 or old_depth > depths[feature]:
-                assign = True
-            elif is_tie and by_name:
-                old_parent = parents[feature][0]
+            group_candidates = [p for p in candidates if p in groups and feature in groups[p]]
+            if group_candidates:
+                parents[feature] = (min(group_candidates), "group")
+                continue
+
+            mandatory_candidates = [p for p in candidates if feature in implies.get(p, ())]
+            if mandatory_candidates:
+                parents[feature] = (min(mandatory_candidates), "mandatory")
+                continue
+
+            if by_name:
                 child_name = ids2features.get(feature, "").strip('"').lower()
-                old_sim = cls._name_sim(child_name, ids2features.get(old_parent, ""))
-                new_sim = cls._name_sim(child_name, ids2features.get(parent, ""))
-                assign = new_sim > old_sim
+                best = max(candidates, key=lambda p: cls._name_sim(child_name, ids2features.get(p, "")))
             else:
-                assign = is_tie  # default: last write wins
-
-            if assign:
-                if parent in groups:
-                    parents[feature] = (parent, "group")
-                elif parent in implies and feature in implies[parent]:
-                    parents[feature] = (parent, "mandatory")
-                else:
-                    parents[feature] = (parent, "optional")
-
-        childs = {child for child in implied_by.get(feature, set()) if child not in depths or depths[child] >= depth + 1}
-
-        for child in childs:
-            depths, parents = cls.find_depths(child, feature, parents, clauses, implies, implied_by, groups, ids2features, depth + 1, depths, by_name=by_name)
+                best = min(candidates)
+            parents[feature] = (best, "optional")
 
         return depths, parents
 
@@ -126,7 +134,7 @@ class UVL:
         parents2childs.setdefault(new_parent_id, []).append((child_id, rel))
 
     @classmethod
-    def from_cnf(cls, filepath, file_out, optimize=False, by_name=False):
+    def from_cnf(cls, filepath, file_out, optimize=False, by_name=False, verify=False):
 
         cnf = CNF(from_file = filepath)
 
@@ -148,17 +156,60 @@ class UVL:
         implies = {}
         groups = {}
 
+        group_candidates = {}  # frozenset(members) -> [parent, parent, ...]
+
         for clause in clauses:
             if len(clause) == 2:
                 a, b = sorted(clause)
 
-                if a < 0 and b > 0:
+                if a < 0 and b > 0 and abs(a) != b:
                     implies[abs(a)] = implies.get(abs(a), set())
                     implies[abs(a)].add(b)
             elif len(clause) > 2:
                 if len(xs := [x for x in clause if x < 0]) == 1:
                     parent = abs(xs[0])
-                    groups[parent] = {x for x in clause if x > 0}
+                    # Some clauses (e.g. Tseitin-style encoding artifacts in
+                    # automotive02v4) are tautological, containing both a
+                    # variable and its negation -- such a clause is always
+                    # true regardless of assignment, so it carries zero real
+                    # constraint information. If the parent's own variable
+                    # appears positively too, that's exactly this case:
+                    # skip the whole clause rather than fabricating a
+                    # (degenerate, single-member) group out of it.
+                    if parent in (x for x in clause if x > 0):
+                        continue
+                    members = frozenset(x for x in clause if x > 0)
+                    group_candidates.setdefault(members, []).append(parent)
+
+        for members, candidate_parents in group_candidates.items():
+            # A genuine UVL alternative/or group's member set can only
+            # ever belong to one parent -- a feature has exactly one true
+            # parent structurally, so the same named members can't
+            # legitimately be declared group members under two different
+            # parents. If the same member set shows up under more than
+            # one parent here, that's not ambiguity to resolve; it's the
+            # "exactly one negative literal, length > 2" clause shape
+            # coincidentally matching an ordinary cross-tree constraint
+            # like "P => (A | B)" for several unrelated P's (seen in
+            # automotive02v4). None of those candidates are trustworthy
+            # as a real group, so all are dropped -- the underlying
+            # clauses still surface correctly afterwards as residual
+            # cross-tree constraints, just not as tree structure.
+            if len(candidate_parents) != 1:
+                continue
+            parent = candidate_parents[0]
+            # A genuine UVL alternative/or group's CNF encoding always
+            # gives *each* member its own individual "member => parent"
+            # clause, in addition to the group's own "at least one"
+            # disjunction -- selecting a member always requires its
+            # parent selected. A plain boolean "parent => (m1 | m2 |
+            # ...)" cross-tree constraint (automotive02v4's F_A154174AAF19
+            # has 17 of these, each with a different, disjoint member
+            # pair -- clearly not one feature's single real group) has no
+            # reason to also individually imply the parent from each
+            # disjunct. Requiring that edge rules those out.
+            if all(parent in implies.get(m, ()) for m in members):
+                groups[parent] = set(members)
 
 
         implied_by = {}
@@ -171,8 +222,15 @@ class UVL:
 
         root_candidates = sum([clause for clause in clauses if len(clause) == 1], [])
 
-        for root in root_candidates[:1]:
-            _, parents = cls.find_depths(root, None, {}, clauses, implies, implied_by, groups, ids2features, 0, {}, by_name=by_name)
+        root = root_candidates[0]
+
+        _, parents = cls.find_depths(root, implies, implied_by, groups, ids2features, by_name=by_name)
+
+        # Any other feature forced true by its own unit clause is attached as a
+        # mandatory child of the root instead of being dropped from the tree.
+        for extra in root_candidates[1:]:
+            if extra != root and extra not in parents:
+                parents[extra] = (root, "mandatory")
 
         parents2childs = {}
 
@@ -183,16 +241,22 @@ class UVL:
         for parent in parents2childs:
             parents2childs[parent] = sorted(parents2childs[parent], key = lambda x: x[1])
 
-        root = root_candidates[0]
-
         dump = [(0, "features")]
         dump = cls.visit(root, 1, parents2childs, ids2features, clauses, groups, dump)
         s = "\n".join(f'{' ' * indent * 4}{line}' for indent, line in dump)
 
         features2ids = {v: k for k, v in ids2features.items()}
 
+        # Equivalent to what parsing the text above (`s`) would produce --
+        # built directly from the in-memory maps instead, so we don't need
+        # to serialize to text and reparse it just to compute this.
+        feature_hierarchy, root_name = cls._build_feature_hierarchy(
+            root, parents2childs, groups, ids2features, clauses
+        )
+
         # Remaining CTCs: original clauses not covered by the hierarchy
-        hier_hashes = {hash(str(sorted(c, key=abs))) for c in UVL(from_str=s).to_cnf(features2ids).clauses}
+        hier_clauses = [[features2ids[root_name]]] + cls._hierarchy_to_cnf(feature_hierarchy, features2ids)
+        hier_hashes = {hash(str(sorted(c, key=abs))) for c in hier_clauses}
         ctc_clauses = [c for c in clauses if hash(str(sorted(c, key=abs))) not in hier_hashes]
 
         if ctc_clauses:
@@ -217,23 +281,18 @@ class UVL:
             fp.write(s)
 
         if optimize:
-            cls.optimize_from_cnf(file_out, filepath, ids2features)
+            cls.optimize_from_cnf(file_out, filepath, ids2features, feature_hierarchy, root_name, verify=verify)
 
     @classmethod
-    def optimize_from_cnf(cls, uvl_file, dimacs_file, ids2features):
+    def optimize_from_cnf(cls, uvl_file, dimacs_file, ids2features, hierarchy, root, verify=False):
         import copy
 
         cnf = CNF(from_file=dimacs_file)
         features2ids = {v: k for k, v in ids2features.items()}
         orig_set = {tuple(sorted(c, key=abs)) for c in cnf.clauses}
 
-        uvl = UVL(from_file=uvl_file)
-        builder = uvl.builder()
-        hierarchy = builder.feature_hierarchy
-        root = builder.root_feature
-
         def get_hier_set(h):
-            return {tuple(sorted(c, key=abs)) for c in [[features2ids[root]]] + uvl._hierarchy_to_cnf(h, features2ids)}
+            return {tuple(sorted(c, key=abs)) for c in [[features2ids[root]]] + cls._hierarchy_to_cnf(h, features2ids)}
 
         def build_uvl_str(h):
             hs = get_hier_set(h)
@@ -261,20 +320,6 @@ class UVL:
             compacted = len(implications) + len(other)
             return s, compacted
 
-        def count_compacted_ctcs(h):
-            hs = get_hier_set(h)
-            ctcs = [c for c in cnf.clauses if tuple(sorted(c, key=abs)) not in hs]
-            implications = set()
-            other = 0
-            for clause in ctcs:
-                negs = [x for x in clause if x < 0]
-                pos  = [x for x in clause if x > 0]
-                if len(negs) == 1 and len(pos) == 1:
-                    implications.add(abs(negs[0]))
-                else:
-                    other += 1
-            return len(implications) + other
-
         # Precompute depths from root
         def compute_depths():
             depths = {}
@@ -297,6 +342,68 @@ class UVL:
         #   - one move per child: pick the shallowest valid new parent
         raw_candidates = {}  # child_name -> (new_parent_depth, parent_name)
         depths = compute_depths()
+        hier_set = set(get_hier_set(hierarchy))  # hierarchy is unchanged throughout this scan
+
+        # Incremental bookkeeping for the batch loop below. Rebuilding
+        # get_hier_set/count_compacted_ctcs from the *whole* tree on every
+        # batch (as before) is O(tree size + total CNF clauses) each time,
+        # which dominates runtime on large, group-heavy models where there
+        # can be many batches. Since apply_single_move only ever touches a
+        # few features' own entries, and _feature_own_clauses attributes
+        # every hierarchy clause to exactly one owning feature, we can
+        # track hier_set and the remaining-CTC counts as running state and
+        # update them with just the touched features' before/after clause
+        # deltas -- O(batch size) instead of O(tree size) per batch.
+        clause_kind = {}  # clause tuple -> ("impl", child_id) | ("other", None)
+        for c in orig_set:
+            negs = [x for x in c if x < 0]
+            pos  = [x for x in c if x > 0]
+            if len(negs) == 1 and len(pos) == 1:
+                clause_kind[c] = ("impl", abs(negs[0]))
+            else:
+                clause_kind[c] = ("other", None)
+
+        contributed = {
+            name: cls._feature_own_clauses(name, info, features2ids)
+            for name, info in hierarchy.items()
+        }
+
+        child_counts = {}  # child_id -> multiplicity among remaining CTCs
+        other_count = 0
+        for c in orig_set - hier_set:
+            kind, cid = clause_kind[c]
+            if kind == "impl":
+                child_counts[cid] = child_counts.get(cid, 0) + 1
+            else:
+                other_count += 1
+
+        def adjust_ctc_counts(clauses_iterable, sign):
+            nonlocal other_count
+            for c in clauses_iterable:
+                info = clause_kind.get(c)
+                if info is None:
+                    continue
+                kind, cid = info
+                if kind == "impl":
+                    n = child_counts.get(cid, 0) + sign
+                    if n <= 0:
+                        child_counts.pop(cid, None)
+                    else:
+                        child_counts[cid] = n
+                else:
+                    other_count += sign
+
+        def apply_clause_delta(removed, added):
+            # `removed` leaving the hierarchy makes those (original CNF)
+            # clauses CTCs again; `added` entering the hierarchy covers
+            # them, removing them from the remaining-CTC counts.
+            for c in removed:
+                hier_set.discard(c)
+            for c in added:
+                hier_set.add(c)
+            adjust_ctc_counts(removed, +1)
+            adjust_ctc_counts(added, -1)
+
         for clause in cnf.clauses:
             if len(clause) != 2:
                 continue
@@ -305,7 +412,7 @@ class UVL:
             if len(negs) != 1 or len(pos) != 1:
                 continue
             a, b = negs[0], pos[0]
-            if tuple(sorted(clause, key=abs)) in get_hier_set(hierarchy):
+            if tuple(sorted(clause, key=abs)) in hier_set:
                 continue
             child_name  = ids2features.get(abs(a))
             parent_name = ids2features.get(b)
@@ -317,6 +424,19 @@ class UVL:
                 continue
             # Skip if new parent has real OR/XOR groups (would destroy group structure)
             if any(gt in ("or", "xor") for gt, _ in hierarchy[parent_name]["groups"]):
+                continue
+            # Skip if child is currently a real OR/XOR group member at its
+            # old parent (moving it out would shrink/break that group).
+            # This is already known from the hierarchy built by from_cnf --
+            # filtering it here, instead of only via the subset/CTC check
+            # after applying the move, keeps raw_candidates (and therefore
+            # the number of batches, each costing a full get_hier_set
+            # recomputation) much smaller on group-heavy models.
+            old_parent_name = hierarchy[child_name]["parent"]
+            if old_parent_name and any(
+                gt in ("or", "xor") and child_name in members
+                for gt, members in hierarchy.get(old_parent_name, {}).get("groups", [])
+            ):
                 continue
             # Cycle check
             ancestor, cycle = parent_name, False
@@ -379,9 +499,22 @@ class UVL:
             h[new_parent_name]["children"].append((child_name, rel))
 
         applied = 0
+        current_ctcs = len(child_counts) + other_count
         for new_parent_name, children in groups_by_parent:
-            ctcs_before = count_compacted_ctcs(hierarchy)
-            snapshot = copy.deepcopy(hierarchy)
+            ctcs_before = current_ctcs
+
+            # apply_single_move only ever mutates old_parent, new_parent_name,
+            # and child_name's own hierarchy entries -- nothing else -- so a
+            # full deepcopy of the whole tree is unnecessary; snapshot just
+            # the entries this batch could touch, before any move happens.
+            touched = {new_parent_name}
+            for child_name in children:
+                touched.add(child_name)
+                old_parent = hierarchy[child_name]["parent"]
+                if old_parent:
+                    touched.add(old_parent)
+            snapshot = {name: copy.deepcopy(hierarchy[name]) for name in touched if name in hierarchy}
+            before_contrib = {name: contributed.get(name, frozenset()) for name in touched}
 
             moved = []
             for child_name in children:
@@ -402,14 +535,38 @@ class UVL:
             if not moved:
                 continue
 
+            # Diff just the touched features' own clause contributions
+            # (before vs. after this batch's moves) instead of rebuilding
+            # get_hier_set/count_compacted_ctcs from the whole tree.
+            after_contrib = {
+                name: cls._feature_own_clauses(name, hierarchy[name], features2ids) if name in hierarchy else frozenset()
+                for name in touched
+            }
+            all_removed, all_added = [], []
+            for name in touched:
+                old_c = before_contrib.get(name, frozenset())
+                new_c = after_contrib.get(name, frozenset())
+                all_removed.extend(old_c - new_c)
+                all_added.extend(new_c - old_c)
+
+            apply_clause_delta(all_removed, all_added)
+
             # Reject if hier_set ⊄ orig_set; groups>=2 must not increase CTCs; singletons must decrease
-            subset_ok = get_hier_set(hierarchy).issubset(orig_set)
-            ctcs_after = count_compacted_ctcs(hierarchy)
+            subset_ok = all(c in clause_kind for c in all_added)
+            ctcs_after = len(child_counts) + other_count
             if not subset_ok or (len(moved) >= 2 and ctcs_after > ctcs_before) or (len(moved) == 1 and ctcs_after >= ctcs_before):
-                hierarchy = snapshot
+                apply_clause_delta(all_added, all_removed)  # reverse the speculative delta
+                for name, entry in snapshot.items():
+                    hierarchy[name] = entry
                 continue
 
             applied += len(moved)
+            current_ctcs = ctcs_after
+            for name in touched:
+                if name in hierarchy:
+                    contributed[name] = after_contrib.get(name, frozenset())
+                else:
+                    contributed.pop(name, None)
 
         print(f"optimize_from_cnf: {applied} moves applied")
 
@@ -420,6 +577,15 @@ class UVL:
         with open(uvl_file, "w+") as fp:
             fp.write(uvl_str)
 
+        if not verify:
+            print(f"optimize_from_cnf: {n_ctcs} CTCs remaining (verification skipped, pass --verify to check)")
+            return
+
+        # Final round-trip check: reparse the actual text just written and
+        # confirm it's still logically equivalent to the input DIMACS. This
+        # is the only thing that catches bugs in the text serializer itself
+        # (quoting, formatting, ...) -- everything else in this function
+        # works off the in-memory hierarchy and never touches that code path.
         result_set = {tuple(sorted(c, key=abs)) for c in UVL(from_str=uvl_str).to_cnf(features2ids).clauses}
         missing = orig_set - result_set
         extra   = result_set - orig_set
@@ -437,58 +603,119 @@ class UVL:
 
     @classmethod
     def _serialize_feature(cls, feature, feature_hierarchy, indent, lines):
-        lines.append((indent, feature))
-        info = feature_hierarchy.get(feature, {"children": [], "groups": []})
+        # Iterative, with the same memoization as visit(): a feature can be
+        # cross-listed under more than one parent in feature_hierarchy (see
+        # _build_feature_hierarchy's docstring), and without a visited
+        # guard each occurrence would re-walk the full subtree again --
+        # combinatorial on models with heavy group overlap.
+        visited = set()
+        stack = [("node", feature, indent)]
+        while stack:
+            kind, a, b = stack.pop()
+            if kind == "text":
+                lines.append((a, b))
+                continue
 
-        real_groups = [(gt, ms) for gt, ms in info["groups"] if gt in ("or", "xor")]
-        group_members = {m for _, ms in real_groups for m in ms}
+            feature, indent = a, b
+            lines.append((indent, feature))
 
-        mandatory = [c for c, t in info["children"] if t == "mandatory" and c not in group_members]
-        optional  = [c for c, t in info["children"] if t == "optional" and c not in group_members]
+            if feature in visited:
+                continue
+            visited.add(feature)
 
-        if mandatory:
-            lines.append((indent + 1, "mandatory"))
-            for child in mandatory:
-                cls._serialize_feature(child, feature_hierarchy, indent + 2, lines)
+            info = feature_hierarchy.get(feature, {"children": [], "groups": []})
 
-        if optional:
-            lines.append((indent + 1, "optional"))
-            for child in optional:
-                cls._serialize_feature(child, feature_hierarchy, indent + 2, lines)
+            real_groups = [(gt, ms) for gt, ms in info["groups"] if gt in ("or", "xor")]
+            group_members = {m for _, ms in real_groups for m in ms}
 
-        for group_type, members in real_groups:
-            keyword = "or" if group_type == "or" else "alternative"
-            lines.append((indent + 1, keyword))
-            for member in members:
-                cls._serialize_feature(member, feature_hierarchy, indent + 2, lines)
+            mandatory = [c for c, t in info["children"] if t == "mandatory" and c not in group_members]
+            optional  = [c for c, t in info["children"] if t == "optional" and c not in group_members]
+
+            for group_type, members in reversed(real_groups):
+                keyword = "or" if group_type == "or" else "alternative"
+                for member in reversed(members):
+                    stack.append(("node", member, indent + 2))
+                stack.append(("text", indent + 1, keyword))
+
+            if optional:
+                for child in reversed(optional):
+                    stack.append(("node", child, indent + 2))
+                stack.append(("text", indent + 1, "optional"))
+
+            if mandatory:
+                for child in reversed(mandatory):
+                    stack.append(("node", child, indent + 2))
+                stack.append(("text", indent + 1, "mandatory"))
 
     @classmethod
     def visit(cls, feature, indent, parents2childs, ids2features, clauses, groups, dump):
-        dump.append((indent, ids2features[feature]))
+        # Iterative pre-order traversal: feature trees can be thousands of
+        # levels deep (e.g. long implication chains recovered from a large
+        # CNF), which blows Python's call-stack recursion limit if walked
+        # recursively. Stack items are either ("node", feature, indent) --
+        # visit a feature -- or ("text", indent, text) -- emit a header
+        # line at the right point, deferred the same way the recursive
+        # version's dump.append() calls were interleaved with recursion.
+        # Hashed once up front so the per-group XOR pairwise check below is
+        # an O(1) set lookup instead of an O(len(clauses)) list scan -- the
+        # old `sorted(...) in clauses` check made large groups on big models
+        # (e.g. automotive02v4) quadratic-ish in the clause count.
+        clause_set = {tuple(sorted(c, key=abs)) for c in clauses}
+        # A feature can be reached more than once -- once via its real
+        # parent in parents2childs, and potentially again via any group's
+        # raw (unfiltered) membership list, which doesn't necessarily
+        # agree with parents2childs. Without this guard, every such
+        # overlap re-expands the feature's entire subtree from scratch,
+        # which compounds across levels; on models with many groups (e.g.
+        # automotive02v4's ~1400) that is combinatorial, not linear. Once
+        # a feature has been fully expanded, later encounters still emit
+        # its reference line (so cross-listing under a second parent still
+        # shows up in the text) but don't re-walk its children again.
+        visited = set()
+        stack = [("node", feature, indent)]
+        while stack:
+            kind, a, b = stack.pop()
+            if kind == "text":
+                dump.append((a, b))
+                continue
 
-        childs = parents2childs.get(feature, [])
+            feature, indent = a, b
+            dump.append((indent, ids2features[feature]))
 
-        if feature in groups:
-            childs_l = list(groups[feature])
-            is_xor = all(
-                sorted([-c1, -c2], key=abs) in clauses
-                for i, c1 in enumerate(childs_l)
-                for c2 in childs_l[i + 1:]
-            )
-            dump.append((indent + 1, "alternative" if is_xor else "or"))
-            for child in childs_l:
-                dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
-        else:
+            if feature in visited:
+                continue
+            visited.add(feature)
+
+            childs = parents2childs.get(feature, [])
+
+            # A feature can be a group parent *and* separately have its own
+            # mandatory/optional children via parents2childs (a plain
+            # implication edge unrelated to its group) -- these aren't
+            # mutually exclusive, so both must be emitted. Treating them as
+            # an if/else here used to silently drop the non-group children
+            # (and their entire subtrees) whenever a feature happened to
+            # also be a group parent.
             mandatory = [child for child, t in childs if t == "mandatory"]
             optional  = [child for child, t in childs if t == "optional"]
-            if mandatory:
-                dump.append((indent + 1, "mandatory"))
-                for child in mandatory:
-                    dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
             if optional:
-                dump.append((indent + 1, "optional"))
-                for child in optional:
-                    dump = cls.visit(child, indent + 2, parents2childs, ids2features, clauses, groups, dump)
+                for child in reversed(optional):
+                    stack.append(("node", child, indent + 2))
+                stack.append(("text", indent + 1, "optional"))
+            if mandatory:
+                for child in reversed(mandatory):
+                    stack.append(("node", child, indent + 2))
+                stack.append(("text", indent + 1, "mandatory"))
+
+            if feature in groups:
+                childs_l = list(groups[feature])
+                is_xor = all(
+                    tuple(sorted([-c1, -c2], key=abs)) in clause_set
+                    for i, c1 in enumerate(childs_l)
+                    for c2 in childs_l[i + 1:]
+                )
+                for child in reversed(childs_l):
+                    stack.append(("node", child, indent + 2))
+                stack.append(("text", indent + 1, "alternative" if is_xor else "or"))
 
         return dump
 
@@ -639,7 +866,76 @@ class UVL:
 
         return cnf
 
-    def _hierarchy_to_cnf(self, hierarchy, features2ids):
+    @staticmethod
+    def _build_feature_hierarchy(root, parents2childs, groups, ids2features, clauses):
+        """Build a Builder-style feature_hierarchy dict directly from
+        from_cnf's in-memory parent/child/group maps, equivalent to what
+        parsing visit()'s text output would produce -- without actually
+        serializing to text and reparsing it.
+
+        Mirrors visit()'s exact traversal (same group-branch condition,
+        same `groups[feature]` raw membership, same iteration order) and
+        BaseFeatureModelBuilder._start_feature's exact semantics: every
+        declared child is unconditionally appended to its parent's
+        "children" list (group members included, typed "optional"), but
+        a feature's own parent/children/groups content -- and recursion
+        into it -- only happens on its first encounter. A feature can
+        otherwise be reachable via more than one path (visit() uses the
+        raw, unfiltered `groups` dict, which doesn't necessarily agree
+        with what find_depths actually assigned in parents2childs), and
+        real re-parsing resolves that by keeping the first encountered
+        declaration's content and simply cross-listing it under any
+        later parent too.
+        """
+        clause_set = {tuple(sorted(c, key=abs)) for c in clauses}
+        hierarchy = {}
+
+        def walk(feature_id, parent_name, child_type):
+            name = ids2features[feature_id]
+            if parent_name is not None:
+                hierarchy[parent_name]["children"].append((name, child_type))
+
+            if name in hierarchy:
+                return name  # already built (and recursed) on an earlier visit
+
+            hierarchy[name] = {"parent": parent_name, "children": [], "groups": []}
+
+            childs = parents2childs.get(feature_id, [])
+
+            # A feature can be a group parent *and* separately have its own
+            # mandatory/optional children via parents2childs (a plain
+            # implication edge unrelated to its group) -- these aren't
+            # mutually exclusive, so both must be walked. An if/else here
+            # used to silently drop the non-group children (and everything
+            # beneath them) whenever a feature happened to also be a group
+            # parent.
+            if feature_id in groups:
+                member_ids = list(groups[feature_id])
+                is_xor = all(
+                    tuple(sorted([-a, -b], key=abs)) in clause_set
+                    for i, a in enumerate(member_ids)
+                    for b in member_ids[i + 1:]
+                )
+                hierarchy[name]["groups"].append(
+                    ("xor" if is_xor else "or", [ids2features[m] for m in member_ids])
+                )
+                for member_id in member_ids:
+                    walk(member_id, name, "optional")
+
+            mandatory = [c for c, t in childs if t == "mandatory"]
+            optional  = [c for c, t in childs if t == "optional"]
+            for child_id in mandatory:
+                walk(child_id, name, "mandatory")
+            for child_id in optional:
+                walk(child_id, name, "optional")
+
+            return name
+
+        root_name = walk(root, None, None)
+        return hierarchy, root_name
+
+    @staticmethod
+    def _hierarchy_to_cnf(hierarchy, features2ids):
         clauses = []
 
         for feature, info in hierarchy.items():
@@ -665,6 +961,39 @@ class UVL:
 
         return clauses
 
+    @staticmethod
+    def _feature_own_clauses(feature, info, features2ids):
+        """The subset of _hierarchy_to_cnf's output that a single feature's
+        own hierarchy entry contributes (its children/mandatory edges and
+        its own group's clauses). Every hierarchy clause is generated by
+        exactly one feature this way (a child->parent edge is generated by
+        the parent, never the child), so summing this over every feature
+        reproduces _hierarchy_to_cnf's full output -- but it also lets
+        optimize_from_cnf recompute just the touched features after a move
+        instead of the whole tree.
+        """
+        feature_id = features2ids[feature]
+        result = set()
+
+        for child, child_type in info["children"]:
+            child_id = features2ids[child]
+            result.add(tuple(sorted((-child_id, feature_id), key=abs)))
+            if child_type == "mandatory":
+                result.add(tuple(sorted((-feature_id, child_id), key=abs)))
+
+        for group_type, group_members in info["groups"]:
+            member_ids = [features2ids[member] for member in group_members]
+
+            if group_type in ("or", "xor"):
+                result.add(tuple(sorted([-feature_id] + member_ids, key=abs)))
+
+            if group_type == "xor":
+                for i in range(len(member_ids)):
+                    for j in range(i + 1, len(member_ids)):
+                        result.add(tuple(sorted((-member_ids[i], -member_ids[j]), key=abs)))
+
+        return frozenset(result)
+
     def _constraints_to_cnf(self, constraints, features2ids):
         """Convert UVL constraints to CNF using direct conversion (no sympy)."""
         clauses = []
@@ -676,8 +1005,10 @@ class UVL:
                 
                 # Check if this is a pure boolean constraint
                 # Skip if it contains attribute references (.)
-                # or arithmetic comparisons that are not part of =>
-                temp_str = constraint_str.replace('=>', '')  # Remove implication operator
+                # or arithmetic comparisons that are not part of => or <=>
+                # (strip <=> before => -- otherwise stripping "=>" out of
+                # "<=>" leaves a stray "<" that looks like a comparison)
+                temp_str = constraint_str.replace('<=>', '').replace('=>', '')
                 if '.' in constraint_str:
                     print(f"Info: Skipping constraint with attribute reference: '{constraint_str}'")
                     continue
@@ -699,13 +1030,19 @@ class UVL:
         """Parse a boolean expression into an AST."""
         expr_str = expr_str.strip()
         
-        # Handle implication (lowest precedence)
+        # Handle equivalence and implication (lowest precedence). <=> must be
+        # checked before => at each position -- otherwise the "=>" embedded
+        # inside "<=>" matches first and leaves a stray "<" on the left side.
         depth = 0
         for i in range(len(expr_str) - 1, -1, -1):
             if expr_str[i] == '(':
                 depth += 1
             elif expr_str[i] == ')':
                 depth -= 1
+            elif depth == 0 and i >= 2 and expr_str[i-2:i+1] == '<=>':
+                left = self._parse_boolean_expr(expr_str[:i-2], features2ids)
+                right = self._parse_boolean_expr(expr_str[i+1:], features2ids)
+                return ('EQUIVALENCE', left, right)
             elif depth == 0 and i > 0 and expr_str[i-1:i+1] == '=>':
                 left = self._parse_boolean_expr(expr_str[:i-1], features2ids)
                 right = self._parse_boolean_expr(expr_str[i+1:], features2ids)
@@ -806,7 +1143,12 @@ class UVL:
                 left = self._to_nnf(inner[1])
                 right = self._to_nnf(('NOT', inner[2]))
                 return ('AND', left, right)
-        
+            elif inner_op == 'EQUIVALENCE':
+                # ~(A <=> B) = ~((A => B) & (B => A))
+                left, right = inner[1], inner[2]
+                expanded = ('AND', ('IMPLIES', left, right), ('IMPLIES', right, left))
+                return self._to_nnf(('NOT', expanded))
+
         elif op == 'AND':
             left = self._to_nnf(expr[1])
             right = self._to_nnf(expr[2])
@@ -822,7 +1164,12 @@ class UVL:
             left = self._to_nnf(('NOT', expr[1]))
             right = self._to_nnf(expr[2])
             return ('OR', left, right)
-        
+
+        elif op == 'EQUIVALENCE':
+            # A <=> B  ≡  (A => B) & (B => A)
+            left, right = expr[1], expr[2]
+            return self._to_nnf(('AND', ('IMPLIES', left, right), ('IMPLIES', right, left)))
+
         return expr
 
     def _distribute(self, expr):
