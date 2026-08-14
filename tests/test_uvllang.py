@@ -393,6 +393,40 @@ constraints
         finally:
             os.unlink(temp_file)
 
+    def test_to_cnf_strips_tautological_clauses(self, use_antlr):
+        """A clause containing both a literal and its negation is always
+        true regardless of assignment, so it carries zero real constraint
+        information -- but left in, it can confuse downstream heuristics
+        that pattern-match on clause shape (e.g. any2uvl's group detection
+        mistaking one for a self-referencing group, as happened on
+        automotive02v4). to_cnf() must filter these out.
+        """
+        uvl_content = """namespace Test
+
+features
+    ARoot
+        optional
+            A
+            B
+
+constraints
+    A | !A
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
+            f.write(uvl_content)
+            temp_file = f.name
+
+        try:
+            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            cnf = model.to_cnf()
+            for clause in cnf.clauses:
+                lits = set(clause)
+                assert not any(-lit in lits for lit in lits), (
+                    f"Tautological clause found in CNF output: {clause}"
+                )
+        finally:
+            os.unlink(temp_file)
+
     def test_aggregate_functions_detected(self, use_antlr):
         """Test that aggregate functions are detected in constraints."""
         aggregate_file = os.path.join(
@@ -416,6 +450,94 @@ constraints
         assert "B.Price" in constraints_text
         assert "B.Fun" in constraints_text
         assert "C.Fun" in constraints_text
+
+
+def test_antlr_lexer_blank_line_preserves_indent_stack():
+    """Regression: uvl_custom_lexer.handleNewline() checked
+    `self._input.LA(1) == "\\n"` (and "\\r", "\\f", "#") to decide whether
+    to skip indentation tracking for blank/comment lines -- but LA(1)
+    returns an integer character code in the antlr4 Python runtime, not a
+    string, so none of those comparisons could ever be True. Every blank
+    line was therefore treated as a real zero-indentation line, which
+    triggered a full dedent back to depth 0 and discarded every
+    shallower indent level, even ones still needed as valid ancestors for
+    later content. This is a direct unit test on the lexer's indent stack
+    (rather than going through the full parser) so it stays precise about
+    what broke: a blank line between two same-depth siblings must not
+    change the indent stack at all.
+    """
+    from antlr4 import InputStream
+    from uvllang.uvl_custom_lexer import uvl_custom_lexer
+
+    content = "A\n\tB\n\t\tC\n\t\tD\n\n\t\tE\n"
+    lexer = uvl_custom_lexer(InputStream(content))
+    stream_tokens = []
+    while True:
+        t = lexer.nextToken()
+        if t.type == -1:  # EOF
+            break
+        stream_tokens.append(t)
+
+    # nextToken() drains the indent stack with trailing DEDENTs once EOF
+    # is reached, so the final stack is always empty -- that's expected,
+    # not the thing under test. What matters is the token *sequence*
+    # between D and E: since they're siblings at the same depth (with
+    # only a blank line between them), there must be no INDENT/DEDENT in
+    # between, just the blank line's NEWLINE.
+    names = ["EOF" if t.type == -1 else lexer.symbolicNames[t.type] for t in stream_tokens]
+    d_idx = next(i for i, t in enumerate(stream_tokens) if t.text == "D")
+    e_idx = next(i for i, t in enumerate(stream_tokens) if t.text == "E")
+    between = names[d_idx + 1 : e_idx]
+    assert "DEDENT" not in between and "INDENT" not in between, (
+        f"blank line between same-depth siblings corrupted indentation: {between}"
+    )
+
+
+def test_antlr_blank_line_mid_hierarchy_recovers_all_features():
+    """End-to-end companion to test_antlr_lexer_blank_line_preserves_indent_stack:
+    a blank line in the middle of a deeply nested feature tree used to
+    desync the ANTLR parser (it would raise or silently truncate the rest
+    of the file, expecting only EOF/'constraints' where real content
+    still followed). Found via automotive02v4.uvl, where it silently
+    dropped ~94% of the model's features.
+    """
+    uvl_content = """namespace Test
+
+features
+    Root
+        mandatory
+            A
+                mandatory
+                    B
+                        optional
+                            C
+                            D
+
+        optional
+            E
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
+        f.write(uvl_content)
+        temp_file = f.name
+
+    try:
+        model = UVL(from_file=temp_file, use_antlr=True)
+        features = {f.strip('"') for f in model.features}
+        assert features == {"Root", "A", "B", "C", "D", "E"}, (
+            f"Expected all 6 features, got: {features}"
+        )
+
+        builder = model.builder()
+        hierarchy = builder.feature_hierarchy
+        root_info = next(
+            info for name, info in hierarchy.items() if name.strip('"') == "Root"
+        )
+        child_names = {c.strip('"') for c, _ in root_info["children"]}
+        assert "A" in child_names and "E" in child_names, (
+            f"Root should have both A and E as direct children, got: {child_names}"
+        )
+    finally:
+        os.unlink(temp_file)
 
 
 def test_automotive02v4_equivalence_constraints_not_skipped(capsys):

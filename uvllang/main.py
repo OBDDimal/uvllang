@@ -281,10 +281,22 @@ class UVL:
             fp.write(s)
 
         if optimize:
-            cls.optimize_from_cnf(file_out, filepath, ids2features, feature_hierarchy, root_name, verify=verify)
+            cls.optimize_from_cnf(file_out, filepath, ids2features, feature_hierarchy, root_name)
+
+        if verify:
+            # Runs on the file's final content regardless of whether
+            # --optimize ran (and regardless of whether it applied any
+            # moves) -- this is the only thing that catches bugs in the
+            # text serializer itself (quoting, formatting, ...); everything
+            # else works off in-memory structures and never touches that
+            # code path.
+            with open(file_out, "r", encoding="utf-8") as fp:
+                final_str = fp.read()
+            orig_set = {tuple(sorted(c, key=abs)) for c in clauses}
+            cls._verify_dimacs(final_str, orig_set, features2ids, "from_cnf")
 
     @classmethod
-    def optimize_from_cnf(cls, uvl_file, dimacs_file, ids2features, hierarchy, root, verify=False):
+    def optimize_from_cnf(cls, uvl_file, dimacs_file, ids2features, hierarchy, root):
         import copy
 
         cnf = CNF(from_file=dimacs_file)
@@ -577,22 +589,7 @@ class UVL:
         with open(uvl_file, "w+") as fp:
             fp.write(uvl_str)
 
-        if not verify:
-            print(f"optimize_from_cnf: {n_ctcs} CTCs remaining (verification skipped, pass --verify to check)")
-            return
-
-        # Final round-trip check: reparse the actual text just written and
-        # confirm it's still logically equivalent to the input DIMACS. This
-        # is the only thing that catches bugs in the text serializer itself
-        # (quoting, formatting, ...) -- everything else in this function
-        # works off the in-memory hierarchy and never touches that code path.
-        result_set = {tuple(sorted(c, key=abs)) for c in UVL(from_str=uvl_str).to_cnf(features2ids).clauses}
-        missing = orig_set - result_set
-        extra   = result_set - orig_set
-        if missing or extra:
-            print(f"optimize_from_cnf: DIMACS check FAIL: missing={len(missing)} extra={len(extra)}")
-        else:
-            print(f"optimize_from_cnf: {n_ctcs} CTCs remaining, DIMACS PASS ({len(orig_set)} clauses)")
+        print(f"optimize_from_cnf: {n_ctcs} CTCs remaining")
 
 
     @classmethod
@@ -757,7 +754,8 @@ class UVL:
             else:
                 from antlr4 import InputStream
                 input_stream = InputStream(self._content)
-            
+
+
             lexer = uvl_custom_lexer(input_stream)
             lexer.removeErrorListeners()
             lexer.addErrorListener(CustomErrorListener())
@@ -858,6 +856,16 @@ class UVL:
                 f"Info: Ignored {len(self.arithmetic_constraints)} arithmetic constraints"
             )
 
+        # A tautological clause (containing both a literal and its negation)
+        # is always true regardless of assignment, so it carries zero real
+        # constraint information -- but left in, it can confuse downstream
+        # heuristics that pattern-match on clause shape (e.g. any2uvl's
+        # group detection mistaking one for a self-referencing group).
+        n_before = len(clauses)
+        clauses = [c for c in clauses if not any(-lit in c for lit in c)]
+        if verbose_info and len(clauses) < n_before:
+            print(f"Info: Removed {n_before - len(clauses)} tautological clauses")
+
         cnf = CNF(from_clauses=clauses)
         cnf.comments = [
             f"c {feature_id} {feature_name}"
@@ -933,6 +941,19 @@ class UVL:
 
         root_name = walk(root, None, None)
         return hierarchy, root_name
+
+    @staticmethod
+    def _verify_dimacs(uvl_str, orig_set, features2ids, prefix):
+        """Reparse uvl_str (the actual text just written) and confirm it's
+        still logically equivalent to the original DIMACS clause set.
+        """
+        result_set = {tuple(sorted(c, key=abs)) for c in UVL(from_str=uvl_str).to_cnf(features2ids).clauses}
+        missing = orig_set - result_set
+        extra   = result_set - orig_set
+        if missing or extra:
+            print(f"{prefix}: DIMACS check FAIL: missing={len(missing)} extra={len(extra)}")
+        else:
+            print(f"{prefix}: DIMACS PASS ({len(orig_set)} clauses)")
 
     @staticmethod
     def _hierarchy_to_cnf(hierarchy, features2ids):

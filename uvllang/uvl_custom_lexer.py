@@ -81,12 +81,21 @@ class uvl_custom_lexer(uvl_python_lexer):
         )  # .replaceAll("[\r\n\f]+", "")
         next = self._input.LA(1)
 
+        # LA(1) returns an integer character code (or Token.EOF == -1), not
+        # a string -- comparing it against string literals like "\n" is
+        # always False in Python, silently disabling this entire skip
+        # condition (aside from the opened>0 check). That let every blank
+        # line be treated as a real zero-indentation line, triggering a
+        # full dedent-to-zero and discarding indent levels that were still
+        # valid ancestors for later, deeper content (confirmed on
+        # automotive02v4.uvl, where a blank line in the middle of deep
+        # nesting corrupted the indent stack and desynced the parser).
         if (
             self.opened > 0
-            or next == "\r"
-            or next == "\n"
-            or next == "\f"
-            or next == "#"
+            or next == ord("\r")
+            or next == ord("\n")
+            or next == ord("\f")
+            or next == ord("#")
         ):
             self.skip()
         else:
