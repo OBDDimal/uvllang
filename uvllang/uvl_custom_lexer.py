@@ -90,12 +90,35 @@ class uvl_custom_lexer(uvl_python_lexer):
         # valid ancestors for later, deeper content (confirmed on
         # automotive02v4.uvl, where a blank line in the middle of deep
         # nesting corrupted the indent stack and desynced the parser).
+        #
+        # The comment check itself was also wrong independently of that:
+        # `next == ord("#")` checks for a character this grammar's comment
+        # syntax (`//` and `/* */`, per uvl_lexer.g4) never uses -- '#' was
+        # never a valid UVL comment marker, so a genuine comment-only line
+        # was never actually caught here, only blank lines were. A comment
+        # is only recognizable by its first two characters.
+        is_comment_line = next == ord("/") and self._input.LA(2) in (
+            ord("/"),
+            ord("*"),
+        )
+        # The grammar's `namespace? NEWLINE? includes? NEWLINE? ...` has no
+        # NEWLINE slot before `namespace?` itself -- a leading blank line or
+        # comment only happens to work today when namespace is absent,
+        # because the leading newline gets absorbed by the NEWLINE? slot
+        # that follows namespace's empty match. When namespace (or any
+        # other first section) is actually present, that leading newline
+        # has nowhere to go and the parser rejects it outright. Since
+        # self.lastToken only tracks DEFAULT_CHANNEL tokens (comments never
+        # reach it), this is true until the first real content token has
+        # been seen, so it uniformly covers leading blank lines and leading
+        # comments of either style.
         if (
             self.opened > 0
             or next == ord("\r")
             or next == ord("\n")
             or next == ord("\f")
-            or next == ord("#")
+            or is_comment_line
+            or self.lastToken is None
         ):
             self.skip()
         else:

@@ -1119,7 +1119,7 @@ class UVL:
 
     def _to_cnf(self, expr, features2ids):
         """Convert boolean expression AST to CNF clauses.
-        
+
         Uses standard logical equivalences:
         - A => B  ≡  ~A | B
         - ~(A & B)  ≡  ~A | ~B  (De Morgan)
@@ -1128,10 +1128,11 @@ class UVL:
         """
         # First, eliminate implications and move negations inward (NNF)
         nnf = self._to_nnf(expr)
-        # Then distribute OR over AND to get CNF
-        cnf = self._distribute(nnf)
-        # Extract clauses from CNF
-        return self._extract_clauses(cnf)
+        # Then build CNF via subsumption-pruned distribution (see
+        # _build_cnf's docstring for why this replaced a plain distribute).
+        pair_budget = [5_000_000]
+        clauses = self._build_cnf(nnf, pair_budget)
+        return [list(c) for c in clauses]
 
     def _to_nnf(self, expr):
         """Convert to Negation Normal Form (eliminate => and push NOT inward)."""
@@ -1193,89 +1194,102 @@ class UVL:
 
         return expr
 
-    def _distribute(self, expr):
-        """Distribute OR over AND to get CNF."""
+    @staticmethod
+    def _clause_union(a, b):
+        """Union two clauses (frozensets of literals), or None if the
+        result would be tautological (contains a literal and its negation).
+        """
+        merged = a | b
+        if any(-lit in merged for lit in merged):
+            return None
+        return merged
+
+    @staticmethod
+    def _add_with_subsumption(kept, candidate):
+        """Adds candidate to kept, pruning subsumed clauses either way.
+
+        A clause A subsumes clause B when every literal of A also appears
+        in B: since A must be satisfied on its own, and B contains
+        everything A does plus more, B is automatically satisfied too and
+        adds no constraint of its own -- dropping it changes nothing about
+        the solution space.
+        """
+        for k in kept:
+            if k <= candidate:
+                return  # candidate adds nothing new
+        kept[:] = [k for k in kept if not candidate <= k]
+        kept.append(candidate)
+
+    def _build_cnf(self, expr, pair_budget):
+        """Converts an NNF expression to a list of clauses (frozensets of
+        literals) by combining OR/AND directly into clause lists, pruning
+        subsumed clauses as it goes rather than materializing a full
+        (possibly redundant) cross product first and cleaning up after.
+
+        This matters because AND already decomposes into one clause per
+        literal before any OR-combination happens, so when a literal is
+        common to many disjuncts (real-world Kconfig-derived constraints
+        are often shaped like a big OR of AND-conjunctions all sharing a
+        handful of enabling literals, e.g. a "MEDIA_SUPPORT"-style literal
+        appearing in nearly every conjunct of a ~20-way OR), some pair of
+        disjuncts combines that literal with itself and produces it as a
+        bare unit clause almost immediately. Once that unit clause is
+        kept, every longer candidate containing the same literal is
+        subsumed by it and gets dropped before it can combine further --
+        collapsing what would otherwise be an exponential cross product
+        (confirmed to hang/OOM the previous plain-distribute algorithm on
+        real Linux-kernel Kconfig-derived constraints). It's still an
+        exact CNF over the same variable set: subsumption only removes
+        clauses that were already logically implied by another kept
+        clause.
+
+        `pair_budget` (a single-element list so nested recursive calls can
+        mutate it) bounds the total number of candidate-clause
+        combinations examined across the whole constraint, so a formula
+        that genuinely has no exploitable subsumption structure still
+        fails fast instead of hanging -- the ValueError this raises is
+        caught by _constraints_to_cnf's existing per-constraint
+        try/except, which skips just this one constraint with a warning,
+        the same graceful degradation already used for constraints with
+        attribute references or arithmetic comparisons.
+        """
         op = expr[0]
-        
-        if op in ('LIT', 'NOT'):
-            return expr
-        
-        elif op == 'AND':
-            left = self._distribute(expr[1])
-            right = self._distribute(expr[2])
-            return ('AND', left, right)
-        
-        elif op == 'OR':
-            left = self._distribute(expr[1])
-            right = self._distribute(expr[2])
-            
-            # Check if we need to distribute
-            left_op = left[0]
-            right_op = right[0]
-            
-            if left_op == 'AND':
-                # (A & B) | C  ≡  (A | C) & (B | C)
-                a, b = left[1], left[2]
-                c = right
-                return ('AND',
-                       self._distribute(('OR', a, c)),
-                       self._distribute(('OR', b, c)))
-            
-            elif right_op == 'AND':
-                # A | (B & C)  ≡  (A | B) & (A | C)
-                a = left
-                b, c = right[1], right[2]
-                return ('AND',
-                       self._distribute(('OR', a, b)),
-                       self._distribute(('OR', a, c)))
-            
-            else:
-                return ('OR', left, right)
-        
-        return expr
 
-    def _extract_clauses(self, cnf):
-        """Extract clauses from CNF expression."""
-        clauses = []
-        
-        def extract(expr):
-            op = expr[0]
-            
-            if op == 'AND':
-                extract(expr[1])
-                extract(expr[2])
-            else:
-                # This is a single clause (OR of literals or a single literal)
-                clause = self._extract_literals(expr)
-                clauses.append(clause)
-        
-        extract(cnf)
-        return clauses
+        if op == 'LIT':
+            return [frozenset({expr[1]})]
 
-    def _extract_literals(self, expr):
-        """Extract literals from a clause (OR expression or single literal)."""
-        literals = []
-        
-        def extract(e):
-            op = e[0]
-            
-            if op == 'LIT':
-                literals.append(e[1])
-            elif op == 'NOT':
-                # NOT of a literal
-                inner = e[1]
-                if inner[0] == 'LIT':
-                    literals.append(-inner[1])
-                else:
-                    raise ValueError("NOT should only be applied to literals in CNF")
-            elif op == 'OR':
-                extract(e[1])
-                extract(e[2])
-            else:
-                raise ValueError(f"Unexpected operator in clause: {op}")
-        
-        extract(expr)
-        return literals
+        if op == 'NOT':
+            inner = expr[1]
+            if inner[0] != 'LIT':
+                raise ValueError("NOT should only be applied to literals in NNF")
+            return [frozenset({-inner[1]})]
+
+        if op == 'AND':
+            a = self._build_cnf(expr[1], pair_budget)
+            b = self._build_cnf(expr[2], pair_budget)
+            kept = []
+            for c in a:
+                self._add_with_subsumption(kept, c)
+            for c in b:
+                self._add_with_subsumption(kept, c)
+            return kept
+
+        if op == 'OR':
+            a = self._build_cnf(expr[1], pair_budget)
+            b = self._build_cnf(expr[2], pair_budget)
+            kept = []
+            for ca in a:
+                for cb in b:
+                    pair_budget[0] -= 1
+                    if pair_budget[0] < 0:
+                        raise ValueError("constraint too complex to encode exactly within budget")
+                    union = self._clause_union(ca, cb)
+                    if union is None:
+                        continue
+                    self._add_with_subsumption(kept, union)
+            return kept
+
+        raise ValueError(f"Unexpected operator in NNF: {op}")
 
     def to_smt(self):
         """Convert feature model to SMT-LIB 2 format."""
