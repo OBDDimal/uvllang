@@ -50,6 +50,13 @@ wheels/
 # Generated DIMACS files
 *.dimacs
 
+# Zig build artifacts
+zig-out/
+.zig-cache/
+
+# LaTeX build artifacts
+*.aux
+
 # ANTLR generated files (but we keep the committed ones)
 # Uncomment to ignore all generated files:
 # uvl/UVLPython*.py

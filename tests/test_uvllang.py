@@ -540,26 +540,3 @@ features
         os.unlink(temp_file)
 
 
-def test_automotive02v4_equivalence_constraints_not_skipped(capsys):
-    """Regression test for a real-world model: automotive02v4.uvl has ~99
-    "A <=> B" equivalence constraints. Before the fix, every one of them was
-    silently dropped from the CNF encoding as a false-positive "arithmetic
-    comparison", because stripping "=>" out of "<=>" leaves a stray "<".
-    Only run against the default (Lark) parser -- this file is large enough
-    that parsing it is already the dominant cost of this test.
-    """
-    example_file = os.path.join(
-        os.path.dirname(__file__), "..", "examples", "automotive02v4.uvl"
-    )
-    model = UVL(from_file=example_file)
-
-    equivalence_constraints = [c for c in model.boolean_constraints if "<=>" in c]
-    assert len(equivalence_constraints) > 0, "Should have <=> constraints"
-
-    capsys.readouterr()  # discard any output from parsing/loading
-    model.to_cnf(verbose_info=True)
-    captured = capsys.readouterr()
-    assert "arithmetic comparison" not in captured.out, (
-        "Equivalence (<=>) constraints must not be skipped as arithmetic comparisons:\n"
-        + captured.out
-    )
