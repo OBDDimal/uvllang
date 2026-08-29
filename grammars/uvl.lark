@@ -73,17 +73,21 @@ and_constraint: not_constraint (AND not_constraint)*
 not_constraint: NOT not_constraint    -> not_constraint_op
               | constraint_atom
 
-constraint_atom: OPEN_PAREN constraint CLOSE_PAREN  -> parenthesis_constraint
-               | comparison                         -> equation_constraint
-               | reference                          -> literal_constraint
-
-// Comparisons (equations)
-comparison: comp_expression EQUAL comp_expression          -> equal_equation
-          | comp_expression LOWER comp_expression          -> lower_equation
-          | comp_expression GREATER comp_expression        -> greater_equation
-          | comp_expression LOWER_EQUALS comp_expression   -> lower_equals_equation
-          | comp_expression GREATER_EQUALS comp_expression -> greater_equals_equation
-          | comp_expression NOT_EQUALS comp_expression     -> not_equals_equation
+// A bare reference (`A`) and the left-hand side of a comparison (`A ==
+// B`) both start with the same `comp_expression`; folding them into one
+// rule with an optional comparison tail (rather than two independent
+// top-level alternatives that both bottom out at `reference`) is what
+// makes this LALR(1)-parseable -- two alternatives that can't be told
+// apart until the token *after* the shared prefix is a genuine
+// reduce/reduce conflict for a bounded-lookahead parser, and Earley
+// (unbounded lookahead, explores all derivations) was papering over it.
+// No downstream code inspects the resulting tree shape or the `->`
+// aliases here at all (uvllang.main._visit_constraint_line just
+// reconstructs the raw source text of the whole constraint line), so
+// there is no compatibility reason to keep the old, separately-named
+// comparison_constraint/equation_constraint/literal_constraint rules.
+constraint_atom: OPEN_PAREN constraint CLOSE_PAREN                              -> parenthesis_constraint
+               | comp_expression ((EQUAL | LOWER | GREATER | LOWER_EQUALS | GREATER_EQUALS | NOT_EQUALS) comp_expression)?  -> generic_constraint_atom
 
 // Comparison expressions (superset of arithmetic expressions + references)
 ?comp_expression: comp_additive
@@ -98,20 +102,6 @@ comp_primary: FLOAT                             -> float_literal_expression
             | aggregate_function                -> aggregate_function_expression
             | reference                         -> literal_expression
             | OPEN_PAREN comp_expression CLOSE_PAREN  -> bracket_expression
-
-// Arithmetic expressions (with proper precedence)
-?expression: additive_expression
-
-additive_expression: multiplicative_expression ((ADD | SUB) multiplicative_expression)*
-
-multiplicative_expression: primary_expression ((MUL | DIV) primary_expression)*
-
-primary_expression: FLOAT                              -> float_literal_expression
-                  | INTEGER                            -> integer_literal_expression
-                  | STRING                             -> string_literal_expression
-                  | aggregate_function                 -> aggregate_function_expression
-                  | reference                          -> literal_expression
-                  | OPEN_PAREN expression CLOSE_PAREN  -> bracket_expression
 
 // Aggregate functions
 aggregate_function: sum_aggregate_function       -> sum_aggregate_function_expression

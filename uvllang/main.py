@@ -6,7 +6,7 @@ from pysat.formula import CNF
 from uvllang import _zig
 from uvllang.uvl_lark_lexer import UVLIndentationLexer
 
-# Lark itself (parser construction, grammar loading, the earley engine) is
+# Lark itself (parser construction, grammar loading, the LALR engine) is
 # ~28ms of import time -- real cost on tiny models where actual parsing is
 # sub-millisecond. Only backend="lark" needs it, so it's loaded on first use
 # rather than unconditionally for every UVL/CLI invocation.
@@ -1362,7 +1362,24 @@ def _get_text(tree):
 
 
 def _load_lark_parser():
-    """Load the Lark parser from grammar file."""
+    """Load the Lark parser from grammar file.
+
+    LALR, not Earley: UVL's grammar doesn't need Earley's unbounded
+    lookahead/ambiguity exploration, and Earley's `ambiguity="explicit"`
+    mode was masking a real grammar defect -- a genuine reduce/reduce
+    ambiguity between a bare reference used as a whole boolean constraint
+    (`A`) and one used as the left-hand side of a comparison (`A == B`),
+    since the grammar had two independent top-level alternatives that
+    both bottom out at `reference` with no way to tell them apart until
+    the *next* token. Earley's exhaustive derivation search papered over
+    this (silently, since nothing in this file ever inspected the
+    resulting `_ambig` nodes); LALR's bounded lookahead correctly refuses
+    to guess, which is what surfaced it. Fixed by folding the two
+    alternatives into one (`constraint_atom` in grammars/uvl.lark) rather
+    than working around it here. LALR is also markedly faster and gives
+    exact, actionable grammar-conflict errors instead of leaving an
+    ambiguity for a downstream consumer to mishandle by construction.
+    """
     grammar_path = os.path.join(os.path.dirname(__file__), "..", "grammars", "uvl.lark")
 
     with open(grammar_path, "r") as f:
@@ -1370,9 +1387,8 @@ def _load_lark_parser():
 
     return Lark(
         grammar,
-        parser="earley",
+        parser="lalr",
         start="start",
         propagate_positions=True,
         maybe_placeholders=False,
-        ambiguity="explicit",
     )

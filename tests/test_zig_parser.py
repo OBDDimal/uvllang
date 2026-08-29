@@ -318,14 +318,24 @@ def test_zig_matches_lark_on_extraction(uvl_path):
     assert zig_model.builder().root_feature == lark_model.builder().root_feature
     assert zig_model.builder().feature_hierarchy == lark_model.builder().feature_hierarchy
 
-    # feature_attributes compared against ANTLR, not Lark: Lark's earley
-    # parser (ambiguity="explicit") silently drops a small number of
-    # attribute values on pathological inputs (confirmed on
-    # automotive01.uvl, e.g. N_104357__F_104406's featureDescription__ --
-    # zig and ANTLR agree on it, Lark alone omits it), a pre-existing
-    # Lark-only limitation unrelated to this change.
+    # feature_attributes: compared against both other backends. Lark used
+    # to silently drop a small number of attribute values on pathological
+    # inputs (confirmed on automotive01.uvl, e.g.
+    # N_104357__F_104406's featureDescription__) -- a real bug, not a
+    # backend quirk: Lark's grammar had a genuine reduce/reduce ambiguity
+    # (a bare reference used as a whole boolean constraint vs. as the
+    # left-hand side of a comparison), and running it under Earley with
+    # `ambiguity="explicit"` produced `_ambig` tree nodes that
+    # uvllang.main's tree walker never accounted for, silently
+    # mis-extracting on the rare input where the ambiguity was actually
+    # exercised. Fixed at the grammar level (see grammars/uvl.lark's
+    # `constraint_atom` and _load_lark_parser's docstring) rather than
+    # worked around, so all three backends must now agree exactly.
     antlr_model = UVL(from_file=uvl_path, backend="antlr")
     assert _norm_attributes(zig_model.feature_attributes) == _norm_attributes(
+        antlr_model.feature_attributes
+    )
+    assert _norm_attributes(lark_model.feature_attributes) == _norm_attributes(
         antlr_model.feature_attributes
     )
 
