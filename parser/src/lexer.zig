@@ -331,7 +331,7 @@ pub fn tokenize(alloc: Allocator, src: []const u8) LexError![]Token {
             try l.scanQuoted();
             continue;
         }
-        if (isAlphaAscii(c) or c >= 0x80) {
+        if (isAlphaAscii(c) or c == '_' or c >= 0x80) {
             try l.scanIdentifier();
             continue;
         }

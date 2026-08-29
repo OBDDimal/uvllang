@@ -4,29 +4,36 @@
 
 # uvllang
 
-A Python parser for the Universal Variability Language (UVL). Supports conversion to CNF (DIMACS), SMT-LIB 2, and recovery of UVL models from DIMACS files.
+A parser for the Universal Variability Language (UVL). Supports conversion to CNF (DIMACS), SMT-LIB 2, and recovery of UVL models from DIMACS files.
 
-Two parser backends are available: Lark (default, pure Python) and ANTLR.
+`uvl2cnf` is a native Zig binary with no Python involved. The Python API (`UVL(...)`) defaults to the same Zig backend, and also supports `backend="lark"`/`"antlr"` for full feature/attribute extraction parity, or as a second reference implementation.
 
 ## Installation
 
 ```bash
 pip install uvllang
 
-# With ANTLR parser support
+# With ANTLR parser support (backend="antlr" in the Python API)
 pip install uvllang[antlr]
 ```
+
+The Zig backend (the `uvl2cnf` binary, and the Python API's default) needs building once: `cd parser && zig build`. Then symlink the binary onto your PATH, e.g. `ln -s ../../parser/zig-out/bin/uvl2cnf .venv/bin/uvl2cnf`.
 
 ## CLI tools
 
 ### uvl2cnf — UVL to DIMACS CNF
 
+A native binary (`parser/zig-out/bin/uvl2cnf`, built by `zig build` in `parser/`) with no Python involved, not even at startup.
+
 ```bash
 uvl2cnf model.uvl                 # writes model.dimacs
 uvl2cnf model.uvl output.dimacs   # explicit output path
-uvl2cnf model.uvl -v              # list ignored non-Boolean constraints
-uvl2cnf model.uvl --antlr         # use ANTLR parser
+uvl2cnf model.uvl -v              # accepted; ignored-constraint info already prints unconditionally
 ```
+
+For Lark/ANTLR specifically (e.g. cross-checking against this backend), use the Python API instead: `UVL(from_file="model.uvl", backend="lark").to_cnf()`.
+
+Only the plain **Boolean** language level is supported for CNF conversion, identically across all three backends — group cardinality (`[i..j]` groups), feature-local `{constraint ...}` attributes, and feature cardinality (clone multiplicity) all threaten the CNF's correctness if silently ignored, which is what happens today (see [`docs/non_boolean_support.md`](docs/non_boolean_support.md)). `uvl2cnf` always warns and continues regardless; `to_cnf()` in the Python API raises `NonBooleanConstructError` by default for those three plus dropped constraints (attribute-reference/comparison), unless you pass `drop_non_boolean=True` to `UVL(...)`. `to_smt()` has no such restriction and never raises. Typed features and unreferenced value attributes are always just warned about, never raised on.
 
 ### uvl2smt — UVL to SMT-LIB 2
 
@@ -74,10 +81,9 @@ UVL.from_cnf("model.dimacs", "recovered.uvl", optimize=True, by_name=True)
 
 ## Dependencies
 
-- `lark` — default parser
+- `lark` — backend="lark" in the Python API
 - `python-sat` — CNF handling
-- `sympy` — Boolean constraint processing
-- `antlr4-python3-runtime` — optional, required for `--antlr`
+- `antlr4-python3-runtime` — optional, backend="antlr" in the Python API and `uvl2smt`/`any2uvl`'s `--antlr`
 - `z3-solver` — optional, for solving SMT output
 
 ## Testing

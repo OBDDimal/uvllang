@@ -15,12 +15,25 @@ pub const GroupEntry = struct {
     members: std.ArrayList([]const u8) = .empty,
 };
 
+pub const AttributeEntry = struct {
+    key: []const u8,
+    /// Raw source-text span of the value. A bare key with no value (e.g.
+    /// `abstract`) is never turned into an AttributeEntry at all -- see
+    /// parser.zig's parseAttribute -- matching LarkFeatureExtractor/
+    /// AntlrFeatureExtractor, which don't record those either. Values are
+    /// stored as raw token/getText() text rather than typed Python values,
+    /// also matching those two.
+    value: []const u8,
+};
+
 pub const HInfo = struct {
     children: std.ArrayList(ChildEdge) = .empty,
     groups: std.ArrayList(*GroupEntry) = .empty,
-    /// Unset by Builder (parse->CNF direction). Used by recovery.zig for
-    /// its optimizer's cycle checks and old-parent lookups.
     parent: ?[]const u8 = null,
+    /// Raw keyword text ("String"/"Boolean"/"Integer"/"Real"), matching
+    /// UVL.feature_types's values in the Python implementation.
+    feature_type: ?[]const u8 = null,
+    attributes: std.ArrayList(AttributeEntry) = .empty,
 };
 
 /// Tracks current_feature/current_group state while the parser walks the
@@ -37,6 +50,25 @@ pub const Builder = struct {
     feature_stack: std.ArrayList(?[]const u8) = .empty,
     current_group: ?*GroupEntry = null,
     group_stack: std.ArrayList(*GroupEntry) = .empty,
+    /// Document order, matching Lark/ANTLR's `.features` (a plain list
+    /// built via sequential appends during their tree walk). `features`
+    /// below is unordered (a StringHashMap), kept for the O(1) membership
+    /// checks callers already rely on.
+    ordered_features: std.ArrayList([]const u8) = .empty,
+
+    /// Counts of constructs above the plain Boolean language level, all
+    /// silently mishandled today (see docs/non_boolean_support.md):
+    /// Tier 1 (corrupts CNF correctness or loses a real constraint) --
+    /// `cardinality_group_count`, `constraint_attribute_count`,
+    /// `cardinality_feature_count`; Tier 3 (decorative metadata) --
+    /// `typed_feature_count`, `attributed_feature_count`. Tier 2
+    /// (attribute-reference/comparison constraints) is counted per-constraint
+    /// in capi.zig/main.zig instead, not here.
+    cardinality_group_count: usize = 0,
+    constraint_attribute_count: usize = 0,
+    cardinality_feature_count: usize = 0,
+    typed_feature_count: usize = 0,
+    attributed_feature_count: usize = 0,
 
     pub fn init(alloc: Allocator) Builder {
         return .{
@@ -50,8 +82,11 @@ pub const Builder = struct {
         if (b.root == null) b.root = name;
 
         const gop = try b.hierarchy.getOrPut(name);
-        if (!gop.found_existing) gop.value_ptr.* = HInfo{};
+        if (!gop.found_existing) {
+            gop.value_ptr.* = HInfo{ .parent = b.current_feature };
+        }
         try b.features.put(name, {});
+        try b.ordered_features.append(b.alloc, name);
 
         var child_kind: ChildType = .optional;
         if (b.current_group) |g| {
@@ -66,6 +101,16 @@ pub const Builder = struct {
 
         try b.feature_stack.append(b.alloc, b.current_feature);
         b.current_feature = name;
+    }
+
+    pub fn setFeatureType(b: *Builder, name: []const u8, type_text: []const u8) void {
+        const info = b.hierarchy.getPtr(name) orelse return;
+        info.feature_type = type_text;
+    }
+
+    pub fn addAttribute(b: *Builder, name: []const u8, key: []const u8, value: []const u8) !void {
+        const info = b.hierarchy.getPtr(name) orelse return;
+        try info.attributes.append(b.alloc, .{ .key = key, .value = value });
     }
 
     pub fn endFeature(b: *Builder) void {

@@ -1,127 +1,16 @@
 #!/usr/bin/env python3
 """
-CLI tool for converting UVL files to CNF/SMT format.
+CLI tools for converting UVL files to SMT format and DIMACS back to UVL.
+
+uvl2cnf is NOT here: it's a pure native binary (parser/zig-out/bin/uvl2cnf,
+built by `zig build` in parser/) with no Python involved at all, not even
+at startup. See uvllang.main.UVL(...).to_cnf() for the equivalent Python
+API, which supports backend="lark"/"antlr" in addition to the zig default.
 """
 
 import sys
 import os
 import argparse
-from uvllang.main import UVL
-from uvllang import _zig
-from pysat.formula import CNF
-
-
-def uvl2cnf():
-    parser = argparse.ArgumentParser(
-        description="Convert a UVL feature model to CNF in DIMACS format.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  uvl2cnf model.uvl                    # Convert to model.dimacs (Zig lexes, parses, and builds the CNF)
-  uvl2cnf model.uvl output.dimacs      # Convert to specific output file
-  uvl2cnf model.uvl -v                 # Verbose output showing ignored constraints
-  uvl2cnf model.uvl --antlr            # Parse with ANTLR, hand off to Zig for CNF generation
-  uvl2cnf model.uvl --lark             # Parse with Lark, hand off to Zig for CNF generation
-
-By default (no --antlr/--lark), parsing and CNF generation both happen in
-the Zig backend; Python doesn't parse the file at all. Any ignored
-constraint/type info in that mode is printed by Zig directly, regardless
-of -v.
-        """,
-    )
-
-    parser.add_argument("uvl_file", help="Path to the input UVL file")
-    parser.add_argument(
-        "output_file",
-        nargs="?",
-        help="Optional path to output DIMACS file (default: <uvl_filename>.dimacs)",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show detailed information about ignored constraints and types",
-    )
-    parser.add_argument(
-        "--antlr",
-        action="store_true",
-        help="Parse with ANTLR, hand off to Zig for CNF generation",
-    )
-    parser.add_argument(
-        "--lark",
-        action="store_true",
-        help="Parse with Lark, hand off to Zig for CNF generation",
-    )
-
-    args = parser.parse_args()
-
-    if args.antlr and args.lark:
-        print("Error: --antlr and --lark are mutually exclusive")
-        sys.exit(1)
-
-    if args.verbose:
-        if args.antlr:
-            print("Using ANTLR parser (Zig backend for CNF generation)")
-        elif args.lark:
-            print("Using Lark parser (Zig backend for CNF generation)")
-        else:
-            print("Using Zig for parsing and CNF generation")
-
-    uvl_file = args.uvl_file
-
-    if not os.path.exists(uvl_file):
-        print(f"Error: File '{uvl_file}' not found")
-        sys.exit(1)
-
-    if args.output_file:
-        output_file = args.output_file
-    else:
-        basename = os.path.basename(uvl_file)
-        output_file = os.path.splitext(basename)[0] + ".dimacs"
-
-    try:
-        if args.antlr or args.lark:
-            model = UVL(from_file=uvl_file, use_antlr=args.antlr)
-
-            if args.verbose:
-                if model.arithmetic_constraints:
-                    print(
-                        f"Info: Ignored {len(model.arithmetic_constraints)} arithmetic constraints"
-                    )
-                    for i, constraint in enumerate(
-                        model.arithmetic_constraints[:10], 1
-                    ):  # Show first 10
-                        print(f"  {i}. {constraint.strip()}")
-                    if len(model.arithmetic_constraints) > 10:
-                        print(f"  ... and {len(model.arithmetic_constraints) - 10} more")
-                if model.feature_types:
-                    print(
-                        f"Info: Ignored {len(model.feature_types)} feature type declarations"
-                    )
-                    for feature, ftype in list(model.feature_types.items())[
-                        :10
-                    ]:  # Show first 10
-                        print(f"  {feature}: {ftype}")
-                    if len(model.feature_types) > 10:
-                        print(f"  ... and {len(model.feature_types) - 10} more")
-
-            cnf_formula = model.to_cnf(verbose_info=not args.verbose)
-        else:
-            with open(uvl_file, "r", encoding="utf-8") as f:
-                source = f.read()
-            clauses, id_to_name = _zig.parse_source_to_cnf(source)
-            cnf_formula = CNF(from_clauses=clauses)
-            cnf_formula.comments = [
-                f"c {ident} {name}" for ident, name in sorted(id_to_name.items())
-            ]
-
-        cnf_formula.to_file(output_file)
-
-        print(f"Saved DIMACS to {output_file}")
-
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
 
 
 def uvl2smt():
@@ -176,7 +65,9 @@ Examples:
         output_file = os.path.splitext(basename)[0] + ".smt2"
 
     try:
-        model = UVL(from_file=uvl_file, use_antlr=use_antlr)
+        from uvllang.main import UVL
+
+        model = UVL(from_file=uvl_file, backend="antlr" if use_antlr else "lark")
         smt_content = model.to_smt()
 
         with open(output_file, "w") as f:
@@ -259,6 +150,8 @@ Examples:
         output_file = name_without_ext + "_recovered.uvl"
 
     try:
+        from uvllang.main import UVL
+
         if args.verbose:
             print(f"Converting {input_file} to UVL format...")
 

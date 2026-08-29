@@ -52,7 +52,6 @@ const StatusCode = enum(i32) {
     lex_error = 1,
     parse_error = 2,
     unknown_feature = 3,
-    too_complex = 4,
     out_of_memory = 5,
     invalid_input = 6,
 };
@@ -62,13 +61,34 @@ fn statusForError(err: anyerror) StatusCode {
         error.UnterminatedString, error.UnexpectedChar => .lex_error,
         error.UnexpectedToken, error.UnexpectedEnd => .parse_error,
         error.UnknownFeature => .unknown_feature,
-        error.TooComplex => .too_complex,
         error.NoRoot, error.InvalidInput => .invalid_input,
         else => .out_of_memory,
     };
 }
 
-fn sourceToCnfImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, out_len: *usize) !void {
+/// Counts of constructs above the plain Boolean language level -- see
+/// docs/non_boolean_support.md. Tier 1 (corrupts CNF correctness or loses
+/// a real constraint) first, then Tier 2 (a constraint is dropped), then
+/// Tier 3 (decorative metadata only). Mirrors uvllang.main.UVL's
+/// NonBooleanConstructError policy: the Python side raises by default on
+/// any nonzero Tier 1/2 count, and only ever warns on Tier 3.
+pub const NonBooleanCounts = extern struct {
+    cardinality_groups: usize = 0,
+    constraint_attributes: usize = 0,
+    cardinality_features: usize = 0,
+    attribute_ref_constraints: usize = 0,
+    comparison_constraints: usize = 0,
+    typed_features: usize = 0,
+    attributed_features: usize = 0,
+};
+
+fn sourceToCnfImpl(
+    alloc: Allocator,
+    source: []const u8,
+    out_ptr: *[*]const u8,
+    out_len: *usize,
+    out_non_boolean: *NonBooleanCounts,
+) !void {
     const tokens = try lexer.tokenize(alloc, source);
     const result = try parser.parseModel(alloc, tokens);
     var ids = try cnf.assignIds(alloc, &result.builder.features);
@@ -81,6 +101,8 @@ fn sourceToCnfImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, 
     }
     try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
 
+    var attribute_ref_constraints: usize = 0;
+    var comparison_constraints: usize = 0;
     for (result.constraints) |info| {
         if (info.node) |node| {
             const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
@@ -88,23 +110,26 @@ fn sourceToCnfImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, 
                     std.debug.print("Warning: could not convert constraint at line {d}: unknown feature reference\n", .{info.text_line});
                     continue;
                 },
-                error.TooComplex => {
-                    std.debug.print("Warning: could not convert constraint at line {d}: too complex to encode exactly within budget\n", .{info.text_line});
-                    continue;
-                },
                 else => return err,
             };
             for (node_clauses) |c| try clauses.append(alloc, c);
         } else if (info.saw_dot) {
             std.debug.print("Info: Skipping constraint with attribute reference (line {d})\n", .{info.text_line});
+            attribute_ref_constraints += 1;
         } else if (info.saw_comparison and info.saw_bool_op) {
             std.debug.print("Info: Skipping constraint with arithmetic comparison (line {d})\n", .{info.text_line});
+            comparison_constraints += 1;
+        } else if (info.saw_comparison) {
+            std.debug.print("Info: Skipping constraint (line {d}): a bare comparison isn't Boolean-encodable\n", .{info.text_line});
+            comparison_constraints += 1;
         }
     }
 
+    const deduped = try constraint.dedupExact(alloc, clauses.items);
+
     var kept = std.ArrayList([]const i32).empty;
     var n_taut: usize = 0;
-    for (clauses.items) |c| {
+    for (deduped) |c| {
         if (cnf.isTautological(c)) {
             n_taut += 1;
             continue;
@@ -112,6 +137,25 @@ fn sourceToCnfImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, 
         try kept.append(alloc, c);
     }
     if (n_taut > 0) std.debug.print("Info: Removed {d} tautological clauses\n", .{n_taut});
+
+    const b = &result.builder;
+    if (b.cardinality_group_count > 0) std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF\n", .{b.cardinality_group_count});
+    if (b.constraint_attribute_count > 0) std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted\n", .{b.constraint_attribute_count});
+    if (b.cardinality_feature_count > 0) std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded\n", .{b.cardinality_feature_count});
+    if (attribute_ref_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{attribute_ref_constraints});
+    if (comparison_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{comparison_constraints});
+    if (b.typed_feature_count > 0) std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
+    if (b.attributed_feature_count > 0) std.debug.print("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
+
+    out_non_boolean.* = .{
+        .cardinality_groups = b.cardinality_group_count,
+        .constraint_attributes = b.constraint_attribute_count,
+        .cardinality_features = b.cardinality_feature_count,
+        .attribute_ref_constraints = attribute_ref_constraints,
+        .comparison_constraints = comparison_constraints,
+        .typed_features = b.typed_feature_count,
+        .attributed_features = b.attributed_feature_count,
+    };
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
@@ -126,11 +170,120 @@ export fn uvl_source_to_cnf(
     src_len: usize,
     out_ptr: *[*]const u8,
     out_len: *usize,
+    out_non_boolean: *NonBooleanCounts,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
-    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], out_ptr, out_len) catch |err| {
+    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], out_ptr, out_len, out_non_boolean) catch |err| {
         setError("uvl_source_to_cnf: {t}", .{err});
+        return @intFromEnum(statusForError(err));
+    };
+    return @intFromEnum(StatusCode.ok);
+}
+
+const no_index: u32 = 0xFFFFFFFF;
+
+fn writeU32(w: *std.Io.Writer, value: u32) !void {
+    var buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &buf, value, .little);
+    try w.writeAll(&buf);
+}
+
+fn writeBytes(w: *std.Io.Writer, bytes: []const u8) !void {
+    try writeU32(w, @intCast(bytes.len));
+    try w.writeAll(bytes);
+}
+
+/// Full pipeline, second entry point: lex+parse (a fresh pass, independent
+/// of `uvl_source_to_cnf`) to extract everything Lark/ANTLR's extractor and
+/// hierarchy builder do -- feature list (document order) + types,
+/// hierarchy (edges/groups/parent, all four group kinds, not just or/xor),
+/// attributes, and raw constraint text -- so Python can back
+/// `.feature_types`/`.feature_attributes`/`.boolean_constraints`/
+/// `.arithmetic_constraints`/`.builder()`/`to_smt()` for backend="zig" too.
+/// Deliberately does NOT also produce CNF -- `uvl_source_to_cnf` already
+/// does that fast, and this is for callers who need the rest of the
+/// extraction, called lazily on first access from the Python side.
+fn parseSourceFullImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, out_len: *usize) !void {
+    const tokens = try lexer.tokenize(alloc, source);
+    const result = try parser.parseModel(alloc, tokens);
+    const b = &result.builder;
+
+    var index = std.StringHashMap(u32).init(alloc);
+    for (b.ordered_features.items, 0..) |name, i| try index.put(name, @intCast(i));
+
+    var aw = std.Io.Writer.Allocating.init(gpa);
+    defer aw.deinit();
+    const w = &aw.writer;
+
+    try writeU32(w, @intCast(b.ordered_features.items.len));
+    for (b.ordered_features.items) |name| {
+        try writeBytes(w, name);
+        const info = b.hierarchy.get(name).?;
+        try writeBytes(w, info.feature_type orelse "");
+    }
+    try writeU32(w, if (b.root) |r| index.get(r).? else no_index);
+
+    var edges = std.ArrayList([3]u32).empty;
+    var groups = std.ArrayList(struct { parent: u32, kind: u8, members: []const u32 }).empty;
+    for (b.ordered_features.items) |name| {
+        const info = b.hierarchy.get(name).?;
+        const parent_idx = index.get(name).?;
+        for (info.children.items) |edge| {
+            try edges.append(alloc, .{ parent_idx, index.get(edge.name).?, if (edge.kind == .mandatory) 1 else 0 });
+        }
+        for (info.groups.items) |g| {
+            const member_idx = try alloc.alloc(u32, g.members.items.len);
+            for (g.members.items, 0..) |m, i| member_idx[i] = index.get(m).?;
+            try groups.append(alloc, .{ .parent = parent_idx, .kind = @intFromEnum(g.kind), .members = member_idx });
+        }
+    }
+
+    try writeU32(w, @intCast(edges.items.len));
+    for (edges.items) |e| {
+        try writeU32(w, e[0]);
+        try writeU32(w, e[1]);
+        try w.writeByte(@intCast(e[2]));
+    }
+
+    try writeU32(w, @intCast(groups.items.len));
+    for (groups.items) |g| {
+        try writeU32(w, g.parent);
+        try w.writeByte(g.kind);
+        try writeU32(w, @intCast(g.members.len));
+        for (g.members) |m| try writeU32(w, m);
+    }
+
+    var n_attrs: u32 = 0;
+    for (b.ordered_features.items) |name| n_attrs += @intCast(b.hierarchy.get(name).?.attributes.items.len);
+    try writeU32(w, n_attrs);
+    for (b.ordered_features.items) |name| {
+        const feature_idx = index.get(name).?;
+        for (b.hierarchy.get(name).?.attributes.items) |attr| {
+            try writeU32(w, feature_idx);
+            try writeBytes(w, attr.key);
+            try writeBytes(w, attr.value);
+        }
+    }
+
+    try writeU32(w, @intCast(result.constraints.len));
+    for (result.constraints) |c| try writeBytes(w, c.text);
+
+    const owned = try aw.toOwnedSlice();
+    out_ptr.* = owned.ptr;
+    out_len.* = owned.len;
+}
+
+export fn uvl_parse_source_full(
+    src_ptr: [*]const u8,
+    src_len: usize,
+    out_ptr: *[*]const u8,
+    out_len: *usize,
+) callconv(.c) i32 {
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    parseSourceFullImpl(arena_state.allocator(), src_ptr[0..src_len], out_ptr, out_len) catch |err| {
+        setError("uvl_parse_source_full: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
     return @intFromEnum(StatusCode.ok);
@@ -161,6 +314,7 @@ fn hierarchyToCnfImpl(
     constraints: []const [*:0]const u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
+    out_non_boolean: *NonBooleanCounts,
 ) !void {
     const names = try alloc.alloc([]const u8, features_c.len);
     for (features_c, 0..) |c_str, i| names[i] = std.mem.span(c_str);
@@ -205,18 +359,34 @@ fn hierarchyToCnfImpl(
     }
     try cnf.hierarchyToCnf(alloc, &hierarchy, &ids, &clauses);
 
+    var attribute_ref_constraints: usize = 0;
+    var comparison_constraints: usize = 0;
     for (constraints, 0..) |c_str, idx| {
         const text = std.mem.span(c_str);
         const tokens = try lexer.tokenize(alloc, text);
         const parsed = try constraint.parseConstraint(alloc, tokens, 0);
-        const node = parsed.node orelse continue; // attribute ref / comparison: not CNF-encodable
+        if (parsed.node == null) {
+            // attribute ref / comparison: not CNF-encodable. Lark/ANTLR's
+            // own text-based classification (main.py's
+            // _is_arithmetic_constraint) can't reliably tell these apart
+            // from a genuinely boolean constraint (e.g. a dotted
+            // reference used with no comparison operator at all, like
+            // `A.enabled => B`), so this -- the same real syntactic
+            // check `uvl_source_to_cnf` already does for zig -- is the
+            // source of truth for all three backends.
+            if (parsed.saw_dot) {
+                std.debug.print("Info: Skipping constraint {d}: attribute reference\n", .{idx});
+                attribute_ref_constraints += 1;
+            } else {
+                std.debug.print("Info: Skipping constraint {d}: numeric comparison\n", .{idx});
+                comparison_constraints += 1;
+            }
+            continue;
+        }
+        const node = parsed.node.?;
         const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
             error.UnknownFeature => {
                 std.debug.print("Warning: could not convert constraint {d}: unknown feature reference\n", .{idx});
-                continue;
-            },
-            error.TooComplex => {
-                std.debug.print("Warning: could not convert constraint {d}: too complex to encode exactly within budget\n", .{idx});
                 continue;
             },
             else => return err,
@@ -224,11 +394,18 @@ fn hierarchyToCnfImpl(
         for (node_clauses) |c| try clauses.append(alloc, c);
     }
 
+    const deduped = try constraint.dedupExact(alloc, clauses.items);
+
     var kept = std.ArrayList([]const i32).empty;
-    for (clauses.items) |c| {
+    for (deduped) |c| {
         if (cnf.isTautological(c)) continue;
         try kept.append(alloc, c);
     }
+
+    out_non_boolean.* = .{
+        .attribute_ref_constraints = attribute_ref_constraints,
+        .comparison_constraints = comparison_constraints,
+    };
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
@@ -240,7 +417,12 @@ fn hierarchyToCnfImpl(
 
 /// Hybrid pipeline: caller already parsed the model; only CNF generation
 /// runs here. `features_ptr` is the full feature-name table; every other
-/// array indexes into it.
+/// array indexes into it. `out_non_boolean` is only ever populated with
+/// `attribute_ref_constraints`/`comparison_constraints` -- the other Tier
+/// 1/Tier 3 categories in NonBooleanCounts depend on raw source this
+/// function never sees (only `uvl_source_to_cnf` sees it); callers using
+/// this hybrid path (Lark/ANTLR) get those from their own tree walk
+/// instead and merge the two.
 export fn uvl_hierarchy_to_cnf(
     features_ptr: [*]const [*:0]const u8,
     n_features: usize,
@@ -255,6 +437,7 @@ export fn uvl_hierarchy_to_cnf(
     n_constraints: usize,
     out_ptr: *[*]const u8,
     out_len: *usize,
+    out_non_boolean: *NonBooleanCounts,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
@@ -268,6 +451,7 @@ export fn uvl_hierarchy_to_cnf(
         constraints_ptr[0..n_constraints],
         out_ptr,
         out_len,
+        out_non_boolean,
     ) catch |err| {
         setError("uvl_hierarchy_to_cnf: {t}", .{err});
         return @intFromEnum(statusForError(err));

@@ -3,12 +3,26 @@ import os
 
 from pysat.formula import CNF
 
-from lark import Tree, Token, Lark
-
+from uvllang import _zig
 from uvllang.uvl_lark_lexer import UVLIndentationLexer
 
+# Lark itself (parser construction, grammar loading, the earley engine) is
+# ~28ms of import time -- real cost on tiny models where actual parsing is
+# sub-millisecond. Only backend="lark" needs it, so it's loaded on first use
+# rather than unconditionally for every UVL/CLI invocation.
+_lark_mod = None
+
+
+def _lark():
+    global _lark_mod, Tree, Token, Lark
+    if _lark_mod is None:
+        import lark as _lark_mod_
+        _lark_mod = _lark_mod_
+        Tree, Token, Lark = _lark_mod.Tree, _lark_mod.Token, _lark_mod.Lark
+    return _lark_mod
+
 try:
-    from antlr4 import CommonTokenStream, FileStream
+    from antlr4 import CommonTokenStream, FileStream, InputStream
     from uvllang.uvl_custom_lexer import uvl_custom_lexer
     from uvllang.uvl_python_parser import uvl_python_parser
     from uvllang.uvl_python_parser_listener import uvl_python_parserListener
@@ -29,27 +43,126 @@ except ImportError:
     uvl_python_parserListener = object
 
 
+# Tier 1/2 categories from uvllang._zig.parse_source_to_cnf's non_boolean
+# dict -- the ones NonBooleanConstructError raises on by default (see
+# docs/non_boolean_support.md). Tier 3 (typed_features, attributed_features)
+# is deliberately excluded: decorative metadata, never raises.
+_THREATENING_NON_BOOLEAN_CATEGORIES = (
+    "cardinality_groups",
+    "constraint_attributes",
+    "cardinality_features",
+    "attribute_ref_constraints",
+    "comparison_constraints",
+)
+
+
+class NonBooleanConstructError(ValueError):
+    """Raised by UVL(backend="zig") when the model uses a construct above
+    the plain Boolean language level whose absence would threaten the
+    CNF's semantics -- see docs/non_boolean_support.md. Pass
+    drop_non_boolean=True to warn and continue instead (matching the
+    uvl2cnf CLI's behavior, which always warns and never raises).
+    """
+
+
 class UVL:
-    def __init__(self, from_file=None, from_str=None, use_antlr=False):
+    """
+    backend: "zig" (default), "lark", or "antlr".
+
+    "zig" runs the whole pipeline (lex, parse, hierarchy, CNF) in the Zig
+    backend (uvllang._zig) and is the fastest option. It supports everything
+    Lark/ANTLR do -- `.features`, `.feature_types`, `.feature_attributes`,
+    `.boolean_constraints`, `.arithmetic_constraints`, `.builder()`,
+    `to_smt()` -- except `.tree`: Lark and ANTLR already produce two
+    unrelated tree shapes (different grammars/tools), so there was never a
+    shared concept there to extend to zig; it raises NotImplementedError on
+    every backend but the one that parsed it.
+
+    The non-CNF properties above run a second, independent lex/parse pass
+    (uvllang._zig.parse_source_full) the first time any of them is
+    accessed, cached after that. to_cnf() never triggers it -- it's built
+    entirely from the single fast pass __init__ already did.
+
+    Only the plain Boolean language level is supported for CNF conversion
+    (see docs/non_boolean_support.md), identically across all three
+    backends. Group cardinality ([i..j] groups), feature-local
+    `{constraint ...}` attributes, and feature cardinality (clone
+    multiplicity) all silently threaten the resulting CNF's semantics if
+    ignored, so to_cnf() raises NonBooleanConstructError by default when
+    any of them is present, on every backend -- not the constructor itself,
+    since this limitation is specific to CNF conversion (to_smt() has no
+    such restriction). Pass drop_non_boolean=True to the constructor to
+    warn (a warning is always printed either way, from parsing onward) and
+    continue instead. Typed features and inert value attributes are
+    always just warned about, never raised on, since they don't affect the
+    Boolean skeleton's correctness and are common in real models.
+    """
+
+    def __init__(
+        self,
+        from_file=None,
+        from_str=None,
+        use_antlr=False,
+        backend=None,
+        drop_non_boolean=False,
+    ):
         # Exactly one of from_file or from_str must be specified
         if from_file is None and from_str is None:
             raise ValueError("Either from_file or from_str parameter is required")
         if from_file is not None and from_str is not None:
             raise ValueError("Cannot specify both from_file and from_str parameters")
 
-        if use_antlr and not ANTLR_AVAILABLE:
+        if backend is None:
+            backend = "antlr" if use_antlr else "zig"
+        if backend not in ("zig", "lark", "antlr"):
+            raise ValueError(
+                f"backend must be one of 'zig', 'lark', 'antlr', got {backend!r}"
+            )
+
+        if backend == "antlr" and not ANTLR_AVAILABLE:
             raise ImportError(
                 "ANTLR parser requested but ANTLR dependencies not available. "
                 "Install with: pip install uvllang[antlr]"
             )
 
-        self._use_antlr = use_antlr
+        self._backend = backend
+        self._use_antlr = backend == "antlr"
+        self._drop_non_boolean = drop_non_boolean
         self._file_path = from_file
         self._content = from_str
         self._tree = None
         self._extractor = None
         self._builder = None
+        self._zig_clauses = None
+        self._zig_id_to_name = None
+        self._non_boolean = None
+        self._source = None
+        self._zig_full = None
         self._parse()
+
+    def _not_available_on_zig_backend(self, attr_name):
+        raise NotImplementedError(
+            f"'{attr_name}' is not available on backend={self._backend!r} -- "
+            "it's backend-specific (Lark/ANTLR already produce two unrelated "
+            "tree shapes; there's no shared concept to extend to zig)."
+        )
+
+    def _ensure_zig_full(self):
+        """Lazily runs uvllang._zig.parse_source_full, caching the result.
+        Only backend="zig" properties besides to_cnf()/.features call this
+        -- to_cnf() is built entirely from __init__'s existing fast pass.
+        """
+        if self._zig_full is None:
+            full = _zig.parse_source_full(self._source)
+            full["boolean_constraints"] = []
+            full["arithmetic_constraints"] = []
+            for text in full["raw_constraints"]:
+                if _is_arithmetic_constraint(text):
+                    full["arithmetic_constraints"].append(text)
+                else:
+                    full["boolean_constraints"].append(text)
+            self._zig_full = full
+        return self._zig_full
 
     @classmethod
     def from_cnf(cls, filepath, file_out, optimize=False, by_name=False, verify=False):
@@ -57,8 +170,6 @@ class UVL:
         Zig backend (uvllang._zig.dimacs_to_uvl); this handles file I/O and
         the optional --verify round-trip check.
         """
-        from uvllang import _zig
-
         with open(filepath, "rb") as f:
             dimacs_bytes = f.read()
 
@@ -71,7 +182,7 @@ class UVL:
             orig_set = {
                 tuple(sorted(c, key=abs)) for c in CNF(from_file=filepath).clauses
             }
-            result_clauses, _ = _zig.parse_source_to_cnf(uvl_text)
+            result_clauses, _, _ = _zig.parse_source_to_cnf(uvl_text)
             result_set = {tuple(sorted(c, key=abs)) for c in result_clauses}
             missing = orig_set - result_set
             extra = result_set - orig_set
@@ -82,12 +193,51 @@ class UVL:
             else:
                 print(f"from_cnf: DIMACS PASS ({len(orig_set)} clauses)")
 
+    def _read_content(self):
+        if self._file_path:
+            with open(self._file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        return self._content
+
+    def _check_non_boolean(self):
+        """Raises NonBooleanConstructError if any Tier 1/2 count is nonzero
+        and drop_non_boolean wasn't passed -- see docs/non_boolean_support.md.
+        Called from to_cnf(), not __init__: the Boolean-only limitation is
+        specific to CNF conversion (to_smt() has no such restriction --
+        SMT-LIB can represent arithmetic constraints and typed features
+        just fine), so parsing a model that merely *uses* one of these
+        constructs shouldn't fail before anyone's actually asked for a CNF.
+        __init__ still always computes the CNF eagerly for all three
+        backends (uvllang._zig already printed its own warnings to stderr
+        by that point regardless) -- only the raise itself is deferred.
+        """
+        if self._drop_non_boolean:
+            return
+        threatened = {
+            category: count
+            for category in _THREATENING_NON_BOOLEAN_CATEGORIES
+            if (count := self._non_boolean.get(category, 0)) > 0
+        }
+        if threatened:
+            found = ", ".join(f"{c}={n}" for c, n in threatened.items())
+            raise NonBooleanConstructError(
+                f"model uses constructs above the Boolean language level "
+                f"that would be silently dropped: {found}. Pass "
+                "drop_non_boolean=True to warn and continue instead."
+            )
+
     def _parse(self):
+        if self._backend == "zig":
+            self._source = self._read_content()
+            self._zig_clauses, self._zig_id_to_name, self._non_boolean = _zig.parse_source_to_cnf(
+                self._source
+            )
+            return
+
         if self._use_antlr:
             if self._file_path:
                 input_stream = FileStream(self._file_path)
             else:
-                from antlr4 import InputStream
                 input_stream = InputStream(self._content)
 
 
@@ -109,11 +259,8 @@ class UVL:
             walker.walk(self._builder, self._tree)
 
         else:
-            if self._file_path:
-                with open(self._file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            else:
-                content = self._content
+            _lark()
+            content = self._read_content()
 
             lexer = UVLIndentationLexer()
             processed_content = lexer.process(content)
@@ -126,12 +273,48 @@ class UVL:
             self._extractor.visit(self._tree)
             self._builder.visit(self._tree)
 
+        # CNF generation, eagerly, for lark/antlr too: matches backend="zig"
+        # (which also runs its equivalent, uvl_source_to_cnf, in __init__),
+        # so to_cnf() below is a single shared fast path for all three --
+        # no per-backend branching left, and non_boolean is populated
+        # identically for the to_cnf()-time NonBooleanConstructError check.
+        # The `features` list's order is irrelevant to the result: Zig's
+        # own id assignment (cnf.zig:assignIds) always sorts alphabetically
+        # regardless of what order names are passed in.
+        features = sorted(set(self._extractor.features))
+        root = self._builder.root_feature or None
+        # All constraints, not just self.boolean_constraints: the
+        # heuristic text-based split (_is_arithmetic_constraint) can
+        # misclassify a boolean-shaped constraint with a dotted reference
+        # and no comparison operator at all (e.g. `A.enabled => B`) as
+        # boolean -- passing only that subset would silently exclude the
+        # genuinely-arithmetic ones from hierarchy_to_cnf's real
+        # per-constraint check entirely, undercounting comparison_constraints.
+        # hierarchy_to_cnf re-derives real node/skip status for every one
+        # of them regardless, so this changes nothing about which clauses
+        # get generated, only which get correctly counted.
+        self._zig_clauses, self._zig_id_to_name, self._non_boolean = _zig.hierarchy_to_cnf(
+            features, root, self._builder.feature_hierarchy, self.constraints
+        )
+        self._non_boolean.update(
+            cardinality_groups=self._builder.cardinality_group_count,
+            constraint_attributes=self._extractor.constraint_attribute_count,
+            cardinality_features=self._extractor.cardinality_feature_count,
+            typed_features=len(self._extractor.feature_types),
+            attributed_features=len(self._extractor.feature_attributes),
+        )
+
     @property
     def tree(self):
+        if self._backend == "zig":
+            self._not_available_on_zig_backend("tree")
         return self._tree
 
     @property
     def features(self):
+        """All feature names, in document order."""
+        if self._backend == "zig":
+            return self._ensure_zig_full()["features"]
         return self._extractor.features
 
     @property
@@ -141,66 +324,85 @@ class UVL:
     @property
     def boolean_constraints(self):
         """Boolean constraints convertible to CNF."""
+        if self._backend == "zig":
+            return self._ensure_zig_full()["boolean_constraints"]
         return self._extractor.boolean_constraints
 
     @property
     def arithmetic_constraints(self):
         """Arithmetic constraints not convertible to CNF."""
+        if self._backend == "zig":
+            return self._ensure_zig_full()["arithmetic_constraints"]
         return self._extractor.arithmetic_constraints
 
     @property
     def feature_types(self):
         """Feature type annotations."""
+        if self._backend == "zig":
+            return self._ensure_zig_full()["feature_types"]
         return self._extractor.feature_types
 
     @property
     def feature_attributes(self):
         """Feature attributes with their values."""
+        if self._backend == "zig":
+            return self._ensure_zig_full()["feature_attributes"]
         return self._extractor.feature_attributes
 
     def builder(self):
         """Feature hierarchy builder."""
+        if self._backend == "zig":
+            full = self._ensure_zig_full()
+            return _ZigBuilder(full["root"], full["feature_hierarchy"])
         return self._builder
 
-    def to_cnf(self, features2ids = None, verbose_info=True):
-        """CNF generation runs in the Zig backend (uvllang._zig.hierarchy_to_cnf).
-        Remaps the ids it returns onto this call's features2ids numbering.
+    def to_cnf(self, features2ids=None, verbose_info=True):
+        """CNF generation runs in the Zig backend (uvllang._zig).
+
+        The whole pipeline -- lex/parse (backend-specific), hierarchy, and
+        CNF -- already ran once during __init__ for all three backends
+        (uvllang._zig.parse_source_to_cnf for zig,
+        uvllang._zig.hierarchy_to_cnf for lark/antlr), so this is always
+        just a remap onto features2ids, identical across backends.
+
+        Raises NonBooleanConstructError if the model uses a Tier 1/2
+        construct (see docs/non_boolean_support.md) unless drop_non_boolean
+        was passed to the constructor.
+
+        verbose_info is accepted for backward compatibility but unused:
+        Zig already prints its own ignored-constraint/non-Boolean warnings
+        unconditionally during __init__ regardless of this flag (matching
+        the "always warn" policy in docs/non_boolean_support.md).
         """
-        from uvllang import _zig
-
-        builder = self.builder()
-
+        self._check_non_boolean()
         if features2ids is None:
-            features2ids = {
-                feature: i + 1 for i, feature in enumerate(sorted(set(self.features)))
-            }
-
-        features = list(features2ids.keys())
-        root = builder.root_feature if builder.root_feature else None
-
-        if verbose_info and self.arithmetic_constraints:
-            print(
-                f"Info: Ignored {len(self.arithmetic_constraints)} arithmetic constraints"
-            )
-
-        zig_clauses, zig_id_to_name = _zig.hierarchy_to_cnf(
-            features, root, builder.feature_hierarchy, self.boolean_constraints
-        )
-
+            # Zig's own id assignment (cnf.zig: assignIds) already sorts
+            # feature names the same way this default does, so the ids
+            # it returned during __init__ already match -- skip the
+            # per-literal remap below, which is the dominant cost on
+            # large models (350k+ clauses).
+            cnf = CNF(from_clauses=self._zig_clauses)
+            cnf.comments = [
+                f"c {feature_id} {feature_name}"
+                for feature_id, feature_name in sorted(self._zig_id_to_name.items())
+            ]
+            return cnf
         clauses = [
             [
-                (features2ids[zig_id_to_name[lit]] if lit > 0 else -features2ids[zig_id_to_name[-lit]])
+                (
+                    features2ids[self._zig_id_to_name[lit]]
+                    if lit > 0
+                    else -features2ids[self._zig_id_to_name[-lit]]
+                )
                 for lit in clause
             ]
-            for clause in zig_clauses
+            for clause in self._zig_clauses
         ]
-
         cnf = CNF(from_clauses=clauses)
         cnf.comments = [
             f"c {feature_id} {feature_name}"
             for feature_name, feature_id in features2ids.items()
         ]
-
         return cnf
 
     def to_smt(self):
@@ -637,11 +839,32 @@ class BaseFeatureExtractor:
         self.arithmetic_constraints = []
         self.feature_types = {}
         self.feature_attributes = {}  # {feature: {attr_name: value}}
+        # Tier 1 non-Boolean-language-level counts -- see
+        # docs/non_boolean_support.md. Tier 3 (typed_features/
+        # attributed_features) isn't tracked incrementally: it's just
+        # len(feature_types)/len(feature_attributes), computed by whoever
+        # assembles the full non_boolean dict (UVL._parse).
+        self.cardinality_feature_count = 0
+        self.constraint_attribute_count = 0
 
     def add_feature(self, feature_name, feature_type=None):
         self.features.append(feature_name)
         if feature_type:
             self.feature_types[feature_name] = feature_type
+
+    def mark_feature_cardinality(self):
+        """A feature declares a clone cardinality ([i..j]) -- Tier 1,
+        not decorative: it needs real subtree duplication to be encoded
+        correctly, which nothing here does (see docs/non_boolean_support.md).
+        """
+        self.cardinality_feature_count += 1
+
+    def mark_constraint_attribute(self):
+        """A feature-local `{constraint ...}`/`{constraints [...]}`
+        attribute was seen and skipped -- Tier 1: a real constraint is
+        silently lost, not just metadata.
+        """
+        self.constraint_attribute_count += 1
 
     def add_attribute(self, feature_name, attr_name, attr_value):
         """Add an attribute value for a feature."""
@@ -650,14 +873,24 @@ class BaseFeatureExtractor:
         self.feature_attributes[feature_name][attr_name] = attr_value
 
     def add_constraint(self, constraint_text):
-        has_boolean_op = any(op in constraint_text for op in ["=>", "<=>"])
-        has_arithmetic_op = any(
-            op in constraint_text for op in ["==", "!=", "<=", ">=", "<", ">"]
-        )
-        if has_arithmetic_op and not has_boolean_op:
+        if _is_arithmetic_constraint(constraint_text):
             self.arithmetic_constraints.append(constraint_text)
         else:
             self.boolean_constraints.append(constraint_text)
+
+
+def _is_arithmetic_constraint(constraint_text):
+    """True if `constraint_text` is a bare comparison (not convertible to
+    CNF), false if it's boolean-encodable. Shared by every backend's
+    constraint classification -- Lark/ANTLR via BaseFeatureExtractor.add_constraint
+    above, zig via UVL._ensure_zig_full below -- so all three agree by
+    construction rather than by keeping separate implementations in sync.
+    """
+    has_boolean_op = any(op in constraint_text for op in ["=>", "<=>"])
+    has_arithmetic_op = any(
+        op in constraint_text for op in ["==", "!=", "<=", ">=", "<", ">"]
+    )
+    return has_arithmetic_op and not has_boolean_op
 
 
 class LarkFeatureExtractor(BaseFeatureExtractor):
@@ -686,6 +919,11 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
                 for sibling in tree.children:
                     if isinstance(sibling, Tree) and sibling.data == "feature_type":
                         self.feature_types[feature_name] = _get_text(sibling)
+                    elif (
+                        isinstance(sibling, Tree)
+                        and sibling.data == "feature_cardinality"
+                    ):
+                        self.mark_feature_cardinality()
                 break
 
         # Extract attributes
@@ -698,7 +936,6 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
         """Extract attribute key-value pairs from attributes tree."""
         for child in attrs_tree.children:
             if isinstance(child, Tree) and child.data == "attribute":
-                # Look for value_attribute
                 for subchild in child.children:
                     if (
                         isinstance(subchild, Tree)
@@ -713,6 +950,11 @@ class LarkFeatureExtractor(BaseFeatureExtractor):
                                 value = _get_text(item)
                         if key and value:
                             self.add_attribute(feature_name, key, value)
+                    elif (
+                        isinstance(subchild, Tree)
+                        and subchild.data == "constraint_attribute"
+                    ):
+                        self.mark_constraint_attribute()
 
     def _visit_constraint_line(self, tree):
         self.add_constraint(_get_text(tree))
@@ -731,6 +973,8 @@ class AntlrFeatureExtractor(BaseFeatureExtractor, uvl_python_parserListener):
             self._current_feature = feature_name
             feature_type = ctx.featureType().getText() if ctx.featureType() else None
             self.add_feature(feature_name, feature_type)
+            if ctx.featureCardinality():
+                self.mark_feature_cardinality()
 
     def exitFeature(self, ctx):
         self._current_feature = None
@@ -745,8 +989,27 @@ class AntlrFeatureExtractor(BaseFeatureExtractor, uvl_python_parserListener):
             value = ctx.value().getText()
             self.add_attribute(self._current_feature, key, value)
 
+    def enterSingleConstraintAttribute(self, ctx):
+        self.mark_constraint_attribute()
+
+    def enterListConstraintAttribute(self, ctx):
+        self.mark_constraint_attribute()
+
     def enterConstraintLine(self, ctx):
         self.add_constraint(ctx.constraint().getText())
+
+
+class _ZigBuilder:
+    """UVL.builder()'s return value for backend="zig". Exposes exactly the
+    two attributes to_cnf()/to_smt() actually read on a builder
+    (.root_feature/.feature_hierarchy, matching BaseFeatureModelBuilder's
+    shape) -- backed by uvllang._zig.parse_source_full's already-decoded
+    dict rather than a Lark/ANTLR tree walk.
+    """
+
+    def __init__(self, root_feature, feature_hierarchy):
+        self.root_feature = root_feature
+        self.feature_hierarchy = feature_hierarchy
 
 
 class BaseFeatureModelBuilder:
@@ -759,6 +1022,14 @@ class BaseFeatureModelBuilder:
         self.feature_stack = []
         self.current_group = None
         self.group_stack = []
+        # Tier 1 -- see docs/non_boolean_support.md. A cardinality group's
+        # members already become plain optional children with no group
+        # entry (below/in the Lark/ANTLR subclasses), matching Zig; this
+        # just counts how many times that happened.
+        self.cardinality_group_count = 0
+
+    def mark_cardinality_group(self):
+        self.cardinality_group_count += 1
 
     def _start_feature(self, feature_name):
         if self.root_feature is None:
@@ -820,6 +1091,14 @@ class LarkFeatureModelBuilder(BaseFeatureModelBuilder):
             self._visit_group(tree, "optional_children")
         elif tree.data == "mandatory_group":
             self._visit_group(tree, "mandatory_children")
+        elif tree.data == "cardinality_group":
+            # Never wrapped in a group entry -- see builder.zig's mirrored
+            # comment -- but still counted (Tier 1: the [i..j] bound isn't
+            # enforced anywhere in the resulting CNF).
+            self.mark_cardinality_group()
+            for child in tree.children:
+                if isinstance(child, Tree):
+                    self.visit(child)
         else:
             for child in tree.children:
                 if isinstance(child, Tree):
@@ -889,6 +1168,14 @@ class AntlrFeatureModelBuilder(BaseFeatureModelBuilder, uvl_python_parserListene
     def exitOptionalGroup(self, ctx):
         self._end_group()
 
+    def enterCardinalityGroup(self, ctx):
+        # Deliberately no _start_group/_end_group -- the walker still
+        # recurses into this context's children regardless (ParseTreeWalker
+        # always walks the full tree), so its members become plain
+        # optional children with no group entry, matching Lark/Zig. Just
+        # counted (Tier 1).
+        self.mark_cardinality_group()
+
 
 def _get_text(tree):
     """Extract text from a Lark tree node."""
@@ -900,7 +1187,7 @@ def _get_text(tree):
         return str(tree)
 
 
-def _load_lark_parser() -> Lark:
+def _load_lark_parser():
     """Load the Lark parser from grammar file."""
     grammar_path = os.path.join(os.path.dirname(__file__), "..", "grammars", "uvl.lark")
 

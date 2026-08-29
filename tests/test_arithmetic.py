@@ -89,7 +89,7 @@ class TestSMTExamples:
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
 
         # Check features
         assert (
@@ -132,7 +132,7 @@ class TestSMTExamples:
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
         smt = model.to_smt()
 
         # Check basic structure
@@ -176,7 +176,7 @@ class TestSMTExamples:
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
         smt = model.to_smt()
 
         solver = Solver()
@@ -241,7 +241,7 @@ constraints
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             smt = model.to_smt()
 
             # Check operators are converted to prefix notation
@@ -269,7 +269,7 @@ constraints
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             smt = model.to_smt()
 
             # Check precedence: multiplication before addition
@@ -284,7 +284,7 @@ constraints
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "expressions.uvl"
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
         smt = model.to_smt()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".smt2", delete=False) as f:

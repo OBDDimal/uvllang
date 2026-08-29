@@ -9,6 +9,7 @@ import pytest
 import os
 import tempfile
 from uvllang import UVL
+from uvllang.main import NonBooleanConstructError
 
 
 def _cnf_satisfied(clauses, assignment):
@@ -27,7 +28,7 @@ EXAMPLE_FILES = [
         "features": 2513,
         "bool_constraints": 2833,
         "arith_constraints": 0,
-        "cnf_clauses": 10311,
+        "cnf_clauses": 10300,
         "has_attributes": True,
     },
     {
@@ -96,7 +97,18 @@ class TestUVLParsing:
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        # drop_non_boolean=True: several EXAMPLE_FILES entries (expressions,
+        # aggregate*, lengthAggregation, feature-cardinality) exercise
+        # arithmetic constraints / feature cardinality on purpose, to check
+        # the CNF still comes out right with them dropped -- this test is
+        # about parsing/CNF-generation correctness, not the
+        # NonBooleanConstructError policy (covered separately in
+        # TestNonBooleanConstructs).
+        model = UVL(
+            from_file=example_file,
+            backend="antlr" if use_antlr else "lark",
+            drop_non_boolean=True,
+        )
 
         assert model.tree is not None, f"{example['file']} should parse successfully"
         assert (
@@ -142,7 +154,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             assert model.tree is not None
             assert len(model.features) == 3
             assert "Root" in model.features
@@ -161,14 +173,14 @@ features
 
         try:
             with pytest.raises(Exception):
-                UVL(from_file=temp_file, use_antlr=use_antlr)
+                UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
         finally:
             os.unlink(temp_file)
 
     def test_nonexistent_file_raises_error(self, use_antlr):
         """Test that parsing a nonexistent file raises an error."""
         with pytest.raises(FileNotFoundError):
-            UVL(from_file="nonexistent_file.uvl", use_antlr=use_antlr)
+            UVL(from_file="nonexistent_file.uvl", backend="antlr" if use_antlr else "lark")
 
     def test_cnf_root_constraint(self, use_antlr):
         """Test that CNF includes root feature constraint."""
@@ -184,7 +196,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
         finally:
@@ -204,11 +216,11 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
             assert [-1, 2] in cnf.clauses
-            assert [-2, 1] in cnf.clauses
+            assert [1, -2] in cnf.clauses
         finally:
             os.unlink(temp_file)
 
@@ -226,10 +238,10 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
-            assert [-2, 1] in cnf.clauses
+            assert [1, -2] in cnf.clauses
             assert [-1, 2] not in cnf.clauses
         finally:
             os.unlink(temp_file)
@@ -249,7 +261,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
             assert [-1, 2, 3] in cnf.clauses
@@ -272,7 +284,7 @@ features
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
             assert [-1, 2, 3] in cnf.clauses
@@ -285,7 +297,7 @@ features
         eshop_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "eshop.uvl"
         )
-        model = UVL(from_file=eshop_file, use_antlr=use_antlr)
+        model = UVL(from_file=eshop_file, backend="antlr" if use_antlr else "lark")
         builder = model.builder()
 
         # Test that builder can be used from outside
@@ -306,7 +318,7 @@ features
         automotive_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
-        model = UVL(from_file=automotive_file, use_antlr=use_antlr)
+        model = UVL(from_file=automotive_file, backend="antlr" if use_antlr else "lark")
 
         # Verify that implication constraints are correctly classified as boolean
         implication_constraints = [c for c in model.boolean_constraints if "=>" in c]
@@ -342,7 +354,7 @@ constraints
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             assert len(model.boolean_constraints) == 1
             assert len(model.arithmetic_constraints) == 0
 
@@ -379,7 +391,7 @@ constraints
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             features2ids = {"ARoot": 1, "A": 2, "B": 3}
             cnf = model.to_cnf(features2ids=features2ids)
 
@@ -417,7 +429,7 @@ constraints
             temp_file = f.name
 
         try:
-            model = UVL(from_file=temp_file, use_antlr=use_antlr)
+            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             for clause in cnf.clauses:
                 lits = set(clause)
@@ -432,7 +444,7 @@ constraints
         aggregate_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "aggregate.uvl"
         )
-        model = UVL(from_file=aggregate_file, use_antlr=use_antlr)
+        model = UVL(from_file=aggregate_file, backend="antlr" if use_antlr else "lark")
 
         constraints = model.arithmetic_constraints
         assert any("sum" in c for c in constraints), "Should detect sum() aggregate"
@@ -443,7 +455,7 @@ constraints
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "expressions.uvl"
         )
-        model = UVL(from_file=example_file, use_antlr=use_antlr)
+        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
 
         # Check that attributes are referenced in constraints
         constraints_text = " ".join(model.arithmetic_constraints)
@@ -538,5 +550,114 @@ features
         )
     finally:
         os.unlink(temp_file)
+
+
+BACKENDS = ["zig", "lark", "antlr"]
+
+
+class TestNonBooleanConstructs:
+    """to_cnf() raises NonBooleanConstructError by default for constructs
+    above the plain Boolean language level that would otherwise silently
+    threaten the CNF's semantics (Tier 1/2 -- see
+    docs/non_boolean_support.md), but only ever warns for purely decorative
+    ones (Tier 3: typed features, value attributes). Identical across all
+    three backends -- parametrized over all of them, not just zig.
+    Merely constructing a UVL never raises: the Boolean-only limitation is
+    specific to to_cnf(), not parsing (to_smt() has no such restriction).
+    """
+
+    GROUP_CARDINALITY = """\
+features
+    Root
+        [1..2]
+            A
+            B
+            C
+"""
+
+    CONSTRAINT_ATTRIBUTE = """\
+features
+    Root {constraint A => B}
+        optional
+            A
+            B
+"""
+
+    ATTRIBUTE_REF_CONSTRAINT = """\
+features
+    Root {weight 3}
+        optional
+            A
+
+constraints
+    Root.weight > 1
+"""
+
+    COMPARISON_CONSTRAINT = """\
+features
+    Root
+        optional
+            A
+
+constraints
+    1 > 0
+"""
+
+    TIER1_2_SOURCES = {
+        "group_cardinality": GROUP_CARDINALITY,
+        "constraint_attribute": CONSTRAINT_ATTRIBUTE,
+        "attribute_ref": ATTRIBUTE_REF_CONSTRAINT,
+        "comparison": COMPARISON_CONSTRAINT,
+    }
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    @pytest.mark.parametrize(
+        "source", TIER1_2_SOURCES.values(), ids=TIER1_2_SOURCES.keys()
+    )
+    def test_construction_never_raises(self, source, backend):
+        """Only to_cnf() enforces the Boolean-only limitation."""
+        model = UVL(from_str=source, backend=backend)
+        assert "Root" in model.features
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    @pytest.mark.parametrize(
+        "source", TIER1_2_SOURCES.values(), ids=TIER1_2_SOURCES.keys()
+    )
+    def test_to_cnf_raises_by_default(self, source, backend):
+        model = UVL(from_str=source, backend=backend)
+        with pytest.raises(NonBooleanConstructError):
+            model.to_cnf()
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    @pytest.mark.parametrize(
+        "source", TIER1_2_SOURCES.values(), ids=TIER1_2_SOURCES.keys()
+    )
+    def test_drop_non_boolean_suppresses_the_exception(self, source, backend):
+        model = UVL(from_str=source, backend=backend, drop_non_boolean=True)
+        cnf = model.to_cnf()
+        assert cnf.clauses is not None
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_feature_cardinality_raises_by_default(self, backend):
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "feature-cardinality.uvl"
+        )
+        model = UVL(from_file=example_file, backend=backend)
+        assert len(model.features) == 4
+        with pytest.raises(NonBooleanConstructError):
+            model.to_cnf()
+        model2 = UVL(from_file=example_file, backend=backend, drop_non_boolean=True)
+        assert len(model2.to_cnf().clauses) > 0
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_tier3_only_never_raises(self, backend):
+        """automotive01.uvl has 799 value attributes (Tier 3) and no
+        Tier 1/2 constructs -- must not raise, even from to_cnf(), by
+        default."""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
+        )
+        model = UVL(from_file=example_file, backend=backend)
+        assert len(model.to_cnf().clauses) == 10300
 
 

@@ -1,5 +1,5 @@
 """
-Equivalence tests for the Zig UVL parser (parser/uvlparse) against the
+Equivalence tests for the Zig UVL parser (parser/uvl2cnf) against the
 Python (Lark) implementation's to_cnf().
 
 Compares actual DIMACS output between both implementations on every real
@@ -19,24 +19,31 @@ from uvllang import UVL, _zig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PARSER_DIR = os.path.join(ROOT, "parser")
-ZIG_BIN = os.path.join(PARSER_DIR, "zig-out", "bin", "uvlparse")
+ZIG_BIN = os.path.join(PARSER_DIR, "zig-out", "bin", "uvl2cnf")
 
 
 @pytest.fixture(scope="session")
 def zig_parser():
-    """Builds parser/ and returns the path to the uvlparse binary. Skips
+    """Builds parser/ and returns the path to the uvl2cnf binary. Skips
     dependent tests if the zig toolchain isn't available.
+
+    Deliberately doesn't pass -Doptimize: this binary is also the one
+    symlinked onto PATH as the real `uvl2cnf` command (see
+    uvllang/cli.py's module docstring), so overriding its optimize mode
+    here would silently leave that command in whatever mode this fixture
+    last used, every time the test suite runs. `zig build`'s own default
+    (ReleaseFast, set in build.zig) is what should ship either way.
     """
     if shutil.which("zig") is None:
         pytest.skip("zig toolchain not available")
     subprocess.run(
-        ["zig", "build", "-Doptimize=ReleaseSafe"],
+        ["zig", "build"],
         cwd=PARSER_DIR,
         check=True,
         capture_output=True,
         text=True,
     )
-    assert os.path.exists(ZIG_BIN), "uvlparse binary was not produced by `zig build`"
+    assert os.path.exists(ZIG_BIN), "uvl2cnf binary was not produced by `zig build`"
     return ZIG_BIN
 
 
@@ -65,12 +72,19 @@ def _run_zig(zig_parser, uvl_path, out_path):
         [zig_parser, uvl_path, out_path], capture_output=True, text=True
     )
     assert result.returncode == 0, (
-        f"uvlparse failed on {uvl_path}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        f"uvl2cnf failed on {uvl_path}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
 
 def _python_dimacs(uvl_path, out_path):
-    model = UVL(from_file=uvl_path)
+    # backend="lark": this compares the zig CLI's own native parse against
+    # Lark-parsed hierarchy/constraints handed to Zig's CNF generation --
+    # backend="zig" here would make it a vacuous zig-vs-zig comparison.
+    # drop_non_boolean=True: some example/synthetic files exercise
+    # cardinality/arithmetic constructs on purpose, to check the CNF these
+    # backends produce still matches the native binary's -- that's a CNF
+    # equivalence check, not the NonBooleanConstructError policy.
+    model = UVL(from_file=uvl_path, backend="lark", drop_non_boolean=True)
     features2ids = {f: i + 1 for i, f in enumerate(sorted(set(model.features)))}
     model.to_cnf(features2ids, verbose_info=False).to_file(out_path)
 
@@ -226,15 +240,97 @@ def _named_clauses(clauses, id_to_name):
 def test_zig_capi_hierarchy_matches_full_pipeline(zig_parser, name):
     text = SYNTHETIC_SNIPPETS[name]
 
-    full_clauses, full_id_to_name = _zig.parse_source_to_cnf(text)
+    full_clauses, full_id_to_name, _ = _zig.parse_source_to_cnf(text)
 
-    model = UVL(from_str=text)
+    # drop_non_boolean=True: one snippet (cardinality_group_with_cross_tree_constraint)
+    # uses feature cardinality, which would otherwise raise on construction
+    # now that backend="lark" also runs the same eager check backend="zig" does.
+    # This test is about CNF equivalence, not the exception policy.
+    model = UVL(from_str=text, backend="lark", drop_non_boolean=True)
     builder = model.builder()
     features = sorted(set(model.features))
-    hybrid_clauses, hybrid_id_to_name = _zig.hierarchy_to_cnf(
-        features, builder.root_feature, builder.feature_hierarchy, model.boolean_constraints
+    hybrid_clauses, hybrid_id_to_name, _ = _zig.hierarchy_to_cnf(
+        features, builder.root_feature, builder.feature_hierarchy, model.constraints
     )
 
     assert _named_clauses(full_clauses, full_id_to_name) == _named_clauses(
         hybrid_clauses, hybrid_id_to_name
     )
+
+
+# ---------------------------------------------------------------------------
+# Full Lark/ANTLR parity: backend="zig" supports everything the other two
+# backends do (features, types, attributes, hierarchy, constraint
+# classification, to_smt()), not just to_cnf(). Constraint text and
+# attribute values are compared with whitespace stripped: Lark/ANTLR
+# concatenate token text with no separator (losing the original spacing),
+# while zig reconstructs the real source span (keeping it) -- an
+# intentional difference confirmed with the user, not a bug.
+# ---------------------------------------------------------------------------
+
+
+def _nows(s):
+    return "".join(s.split())
+
+
+def _norm_constraints(constraints):
+    return {_nows(c) for c in constraints}
+
+
+def _norm_attributes(feature_attributes):
+    return {
+        feature: {key: _nows(value) for key, value in attrs.items()}
+        for feature, attrs in feature_attributes.items()
+    }
+
+
+@pytest.mark.parametrize(
+    "uvl_path",
+    EXAMPLE_UVL_FILES,
+    ids=[os.path.basename(p) for p in EXAMPLE_UVL_FILES],
+)
+def test_zig_matches_lark_on_extraction(uvl_path):
+    # drop_non_boolean=True: this test exercises extraction parity, not the
+    # NonBooleanConstructError policy -- feature-cardinality.uvl (feature
+    # cardinality) and the arithmetic-constraint examples would otherwise
+    # raise on construction.
+    zig_model = UVL(from_file=uvl_path, backend="zig", drop_non_boolean=True)
+    lark_model = UVL(from_file=uvl_path, backend="lark")
+
+    assert sorted(zig_model.features) == sorted(lark_model.features)
+    assert _norm_constraints(zig_model.boolean_constraints) == _norm_constraints(
+        lark_model.boolean_constraints
+    )
+    assert _norm_constraints(zig_model.arithmetic_constraints) == _norm_constraints(
+        lark_model.arithmetic_constraints
+    )
+    assert zig_model.feature_types == lark_model.feature_types
+    assert zig_model.builder().root_feature == lark_model.builder().root_feature
+    assert zig_model.builder().feature_hierarchy == lark_model.builder().feature_hierarchy
+
+    # feature_attributes compared against ANTLR, not Lark: Lark's earley
+    # parser (ambiguity="explicit") silently drops a small number of
+    # attribute values on pathological inputs (confirmed on
+    # automotive01.uvl, e.g. N_104357__F_104406's featureDescription__ --
+    # zig and ANTLR agree on it, Lark alone omits it), a pre-existing
+    # Lark-only limitation unrelated to this change.
+    antlr_model = UVL(from_file=uvl_path, backend="antlr")
+    assert _norm_attributes(zig_model.feature_attributes) == _norm_attributes(
+        antlr_model.feature_attributes
+    )
+
+
+@pytest.mark.parametrize(
+    "uvl_path",
+    EXAMPLE_UVL_FILES,
+    ids=[os.path.basename(p) for p in EXAMPLE_UVL_FILES],
+)
+def test_zig_to_smt_matches_antlr(uvl_path):
+    # Reference is ANTLR, not Lark, for the same reason as
+    # test_zig_matches_lark_on_extraction's feature_attributes check: Lark's
+    # earley-ambiguity attribute-drop bug would otherwise make this test
+    # fail on automotive01.uvl for a pre-existing Lark-only reason unrelated
+    # to zig.
+    zig_model = UVL(from_file=uvl_path, backend="zig", drop_non_boolean=True)
+    antlr_model = UVL(from_file=uvl_path, backend="antlr")
+    assert _nows(zig_model.to_smt()) == _nows(antlr_model.to_smt())

@@ -344,7 +344,7 @@ fn nnf(alloc: Allocator, n: *Node, negate: bool) ClauseError!*Node {
 // bloated CNF while only the pathological ones got the better output.
 // This is now the only construction path.
 
-pub const CnfError = ClauseError || error{TooComplex};
+pub const CnfError = ClauseError;
 
 fn cloneClause(alloc: Allocator, lits: []const i32) ![]i32 {
     const out = try alloc.dupe(i32, lits);
@@ -410,13 +410,65 @@ fn addWithSubsumption(alloc: Allocator, kept: *std.ArrayList([]i32), candidate: 
     try kept.append(alloc, candidate);
 }
 
-/// `pair_budget` bounds the total number of candidate-clause combinations
-/// examined across the whole constraint (not just one OR node), so a
-/// formula that genuinely has no exploitable subsumption structure still
-/// fails fast instead of hanging -- generateClauses treats that as "give
-/// up on this one constraint", the same graceful degradation already used
-/// for attribute-reference and comparison constraints.
-fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *Node, pair_budget: *i64) CnfError![][]i32 {
+/// Hashes/compares clauses by literal content (after sorting each clause
+/// ascending, since two clauses with the same literals in different order
+/// must still count as equal). Used by `dedupExact` to drop exact-duplicate
+/// clauses across the whole file's clause list, in particular between the
+/// feature hierarchy's own clauses and cross-tree constraints that happen
+/// to restate a hierarchy relationship verbatim (common in Kconfig-derived
+/// models) -- see docs/pipeline_clause_dedup.md.
+///
+/// Deliberately exact-match only, not full subsumption: a hierarchy has no
+/// internal subsumption redundancy in practice (verified empirically on
+/// automotive02v4.uvl's 348k+ hierarchy clauses -- 0 were subsumed by
+/// another), and checking a candidate against a large external set for
+/// true subsumption needs a literal-indexed structure to stay fast, which
+/// is more machinery than the realistic case (verbatim restatement) needs.
+const ClauseSetContext = struct {
+    pub fn hash(_: @This(), key: []const i32) u64 {
+        return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(key));
+    }
+    pub fn eql(_: @This(), a: []const i32, b: []const i32) bool {
+        return std.mem.eql(i32, a, b);
+    }
+};
+
+const ClauseSet = std.HashMap([]const i32, void, ClauseSetContext, std.hash_map.default_max_load_percentage);
+
+fn lessAbs(_: void, a: i32, b: i32) bool {
+    return @abs(a) < @abs(b);
+}
+
+/// Canonical clause literal order for this whole pipeline: ascending by
+/// absolute value (e.g. `[1, -2, 3, -4]`), so a clause and its negated
+/// counterpart on the same variable sort adjacently and every clause has
+/// one unambiguous textual form regardless of which pass produced it.
+pub fn canonicalizeOrder(clause: []i32) void {
+    std.mem.sort(i32, clause, {}, lessAbs);
+}
+
+/// Drops exact-duplicate clauses from `clauses` (hierarchy clauses and
+/// every constraint's own clauses, already concatenated by the caller),
+/// keeping the first occurrence of each distinct literal set. Canonicalizes
+/// every clause's literal order first (ascending by absolute value -- see
+/// `canonicalizeOrder`), both so equal-content clauses compare equal
+/// regardless of which pass produced them and so the returned clauses are
+/// all in the same canonical form. O(n) average: one hash lookup/insert
+/// per clause, not a scan against a growing list.
+pub fn dedupExact(alloc: Allocator, clauses: []const []i32) ![][]i32 {
+    for (clauses) |c| canonicalizeOrder(c);
+    var seen = ClauseSet.init(alloc);
+    try seen.ensureTotalCapacity(@intCast(clauses.len));
+    var out = std.ArrayList([]i32).empty;
+    for (clauses) |c| {
+        if (seen.contains(c)) continue;
+        try seen.put(c, {});
+        try out.append(alloc, c);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *Node) CnfError![][]i32 {
     switch (n.*) {
         .lit => |name| {
             const id = features2ids.get(name) orelse return ClauseError.UnknownFeature;
@@ -436,21 +488,19 @@ fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *N
             }
         },
         .and_ => |ab| {
-            const a = try buildCnf(alloc, features2ids, ab[0], pair_budget);
-            const b = try buildCnf(alloc, features2ids, ab[1], pair_budget);
+            const a = try buildCnf(alloc, features2ids, ab[0]);
+            const b = try buildCnf(alloc, features2ids, ab[1]);
             var kept = std.ArrayList([]i32).empty;
             for (a) |c| try addWithSubsumption(alloc, &kept, c);
             for (b) |c| try addWithSubsumption(alloc, &kept, c);
             return kept.toOwnedSlice(alloc);
         },
         .or_ => |ab| {
-            const a = try buildCnf(alloc, features2ids, ab[0], pair_budget);
-            const b = try buildCnf(alloc, features2ids, ab[1], pair_budget);
+            const a = try buildCnf(alloc, features2ids, ab[0]);
+            const b = try buildCnf(alloc, features2ids, ab[1]);
             var kept = std.ArrayList([]i32).empty;
             for (a) |ca| {
                 for (b) |cb| {
-                    pair_budget.* -= 1;
-                    if (pair_budget.* < 0) return CnfError.TooComplex;
                     const u = (try unionClause(alloc, ca, cb)) orelse continue;
                     try addWithSubsumption(alloc, &kept, u);
                 }
@@ -468,8 +518,7 @@ fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *N
 /// unguarded pairwise distribute.
 pub fn generateClauses(alloc: Allocator, features2ids: *const std.StringHashMap(i32), root: *Node) CnfError![][]i32 {
     const in_nnf = try nnf(alloc, root, false);
-    var pair_budget: i64 = 5_000_000;
-    return buildCnf(alloc, features2ids, in_nnf, &pair_budget);
+    return buildCnf(alloc, features2ids, in_nnf);
 }
 
 test "A => B produces a single binary clause" {
@@ -527,3 +576,26 @@ test "comparison is skipped" {
     try std.testing.expect(parsed.node == null);
     try std.testing.expect(parsed.saw_comparison);
 }
+
+test "dedupExact drops an exact duplicate regardless of literal order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var c1 = try alloc.alloc(i32, 2);
+    c1[0] = -1;
+    c1[1] = 2;
+    var c2 = try alloc.alloc(i32, 2); // same clause, literals reversed
+    c2[0] = 2;
+    c2[1] = -1;
+    var c3 = try alloc.alloc(i32, 2); // genuinely different
+    c3[0] = -1;
+    c3[1] = 3;
+    const clauses = [_][]i32{ c1, c2, c3 };
+
+    const out = try dedupExact(alloc, &clauses);
+    try std.testing.expectEqual(@as(usize, 2), out.len);
+    try std.testing.expectEqualSlices(i32, &[_]i32{ -1, 2 }, out[0]);
+    try std.testing.expectEqualSlices(i32, &[_]i32{ -1, 3 }, out[1]);
+}
+
