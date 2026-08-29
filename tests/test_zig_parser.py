@@ -68,8 +68,13 @@ def _read_dimacs(path):
 
 
 def _run_zig(zig_parser, uvl_path, out_path):
+    # --simplify: the Python side (_python_dimacs below) always goes through
+    # capi.zig's sourceToCnfImpl/UVL.to_cnf, which always runs the global
+    # subsumption pass unconditionally. The CLI only runs it when asked
+    # (see docs/pipeline_clause_dedup.md), so it must be requested here too
+    # for the two sides' clause sets to be exactly comparable.
     result = subprocess.run(
-        [zig_parser, uvl_path, out_path], capture_output=True, text=True
+        [zig_parser, uvl_path, out_path, "--simplify"], capture_output=True, text=True
     )
     assert result.returncode == 0, (
         f"uvl2cnf failed on {uvl_path}:\nstdout: {result.stdout}\nstderr: {result.stderr}"

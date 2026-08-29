@@ -386,6 +386,13 @@ class UVL:
                 f"c {feature_id} {feature_name}"
                 for feature_id, feature_name in sorted(self._zig_id_to_name.items())
             ]
+            # CNF(from_clauses=...) infers nv from the highest variable
+            # index actually appearing in a clause, not the true feature
+            # count -- a feature subsumption elimination leaves totally
+            # unconstrained (no surviving clause mentions it at all) would
+            # silently undercount nv, producing a DIMACS header
+            # inconsistent with its own comments.
+            cnf.nv = max(cnf.nv, len(self._zig_id_to_name))
             return cnf
         clauses = [
             [
@@ -403,6 +410,9 @@ class UVL:
             f"c {feature_id} {feature_name}"
             for feature_name, feature_id in features2ids.items()
         ]
+        # See the from_clauses branch above: nv must cover every declared
+        # feature, not just ones a surviving clause happens to mention.
+        cnf.nv = max(cnf.nv, len(features2ids))
         return cnf
 
     def to_smt(self):

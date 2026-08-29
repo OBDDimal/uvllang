@@ -395,78 +395,183 @@ fn subsumes(small: []const i32, big: []const i32) bool {
     return i == small.len;
 }
 
-fn addWithSubsumption(alloc: Allocator, kept: *std.ArrayList([]i32), candidate: []i32) !void {
-    for (kept.items) |k| {
-        if (subsumes(k, candidate)) return; // candidate adds nothing new
-    }
-    var i: usize = 0;
-    while (i < kept.items.len) {
-        if (subsumes(candidate, kept.items[i])) {
-            _ = kept.swapRemove(i);
-        } else {
-            i += 1;
-        }
-    }
-    try kept.append(alloc, candidate);
+fn litHash(l: i32) u64 {
+    const x: i64 = l;
+    const u: u64 = @bitCast(x);
+    return u *% 2654435761;
 }
 
-/// Hashes/compares clauses by literal content (after sorting each clause
-/// ascending, since two clauses with the same literals in different order
-/// must still count as equal). Used by `dedupExact` to drop exact-duplicate
-/// clauses across the whole file's clause list, in particular between the
-/// feature hierarchy's own clauses and cross-tree constraints that happen
-/// to restate a hierarchy relationship verbatim (common in Kconfig-derived
-/// models) -- see docs/pipeline_clause_dedup.md.
+fn sigBit(l: i32) u6 {
+    return @truncate(litHash(l) & 63);
+}
+
+fn computeSig(clause: []const i32) u64 {
+    var s: u64 = 0;
+    for (clause) |l| s |= (@as(u64, 1) << sigBit(l));
+    return s;
+}
+
+/// `subsumes` with a bloom-filter pre-check: a signature mismatch proves
+/// non-subset without touching either clause's literals.
+fn subsumesSig(small_sig: u64, small: []const i32, big_sig: u64, big: []const i32) bool {
+    if (small.len > big.len) return false;
+    if (small_sig & big_sig != small_sig) return false;
+    return subsumes(small, big);
+}
+
+const OccList = std.ArrayList(usize);
+const OccMap = std.AutoHashMap(i32, OccList);
+
+fn occAdd(alloc: Allocator, occ: *OccMap, lit: i32, id: usize) !void {
+    const gop = try occ.getOrPut(lit);
+    if (!gop.found_existing) gop.value_ptr.* = OccList.empty;
+    try gop.value_ptr.append(alloc, id);
+}
+
+fn occLen(occ: *OccMap, lit: i32) usize {
+    if (occ.getPtr(lit)) |list| return list.items.len;
+    return 0;
+}
+
+/// Subsumption-pruned clause accumulator used while distributing one
+/// constraint's own `.and_`/`.or_` NNF node -- bounds the intermediate
+/// clause count during NNF-to-CNF distribution (a plain hash-based
+/// exact-duplicate check would not suffice here: what actually needs
+/// pruning is a longer clause dominated by a shorter, non-identical one
+/// already present, which is the common case when distributing an OR over
+/// an AND -- see docs/pipeline_clause_dedup.md).
 ///
-/// Deliberately exact-match only, not full subsumption: a hierarchy has no
-/// internal subsumption redundancy in practice (verified empirically on
-/// automotive02v4.uvl's 348k+ hierarchy clauses -- 0 were subsumed by
-/// another), and checking a candidate against a large external set for
-/// true subsumption needs a literal-indexed structure to stay fast, which
-/// is more machinery than the realistic case (verbatim restatement) needs.
-const ClauseSetContext = struct {
-    pub fn hash(_: @This(), key: []const i32) u64 {
-        return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(key));
+/// Below `index_threshold` live entries, `insert` does the same O(kept)
+/// linear scan `addWithSubsumption` always did (cheap in the common case:
+/// most constraints produce only a handful of clauses, and building a
+/// hash-based index has real constant-factor overhead that isn't worth
+/// paying for a handful of comparisons). At and above the threshold, it
+/// switches to an occurrence-indexed scan (`occ: literal -> entry
+/// indices`), so a candidate is only ever compared against entries that
+/// actually share a literal with it, not the whole list -- this is what
+/// large per-constraint distributions (observed dominating total runtime
+/// on linux-2.6.33.3.uvl: ~2.1s of ~2.3s total) need to stay fast. Both
+/// modes produce identical output (the same subset relation, always
+/// checked the same way via `subsumesSig`/`subsumes`) -- the threshold
+/// only affects speed, never which clauses survive.
+const IndexedKept = struct {
+    items: std.ArrayList(?[]i32) = .empty,
+    sigs: std.ArrayList(u64) = .empty,
+    live_count: usize = 0,
+    occ: ?OccMap = null,
+
+    const index_threshold = 32;
+
+    /// Builds the occurrence index from the current (guaranteed
+    /// null-free, since linear mode always compacts via `swapRemove`
+    /// rather than tombstoning) contents of `self.items`, backfilling
+    /// `self.sigs` at the same time -- signatures aren't computed at all
+    /// during linear mode, since plain `subsumes` never needs them.
+    fn ensureIndex(self: *IndexedKept, alloc: Allocator) !void {
+        if (self.occ != null) return;
+        self.sigs = std.ArrayList(u64).empty;
+        for (self.items.items) |maybe_c| {
+            try self.sigs.append(alloc, computeSig(maybe_c.?));
+        }
+        var occ = OccMap.init(alloc);
+        for (self.items.items, 0..) |maybe_c, idx| {
+            for (maybe_c.?) |l| try occAdd(alloc, &occ, l, idx);
+        }
+        self.occ = occ;
     }
-    pub fn eql(_: @This(), a: []const i32, b: []const i32) bool {
-        return std.mem.eql(i32, a, b);
+
+    fn insert(self: *IndexedKept, alloc: Allocator, candidate: []i32) !void {
+        if (self.occ == null and self.live_count < index_threshold) {
+            // Exactly the old (pre-indexed) linear-scan behavior: O(kept)
+            // per insertion, but with real compaction via `swapRemove` --
+            // NOT tombstoning -- so the scanned array never grows beyond
+            // the current live count. Tombstoning here would silently
+            // turn this back into O(all insertions ever attempted) for
+            // any node that does a lot of evicting (observed: turned a
+            // ~2s run into 3+ minutes on linux-2.6.33.3.uvl during
+            // development).
+            for (self.items.items) |maybe_k| {
+                if (subsumes(maybe_k.?, candidate)) return; // candidate adds nothing new
+            }
+            var idx: usize = 0;
+            while (idx < self.items.items.len) {
+                if (subsumes(candidate, self.items.items[idx].?)) {
+                    _ = self.items.swapRemove(idx);
+                    self.live_count -= 1;
+                } else {
+                    idx += 1;
+                }
+            }
+            try self.items.append(alloc, candidate);
+            self.live_count += 1;
+            return;
+        }
+
+        const candidate_sig = computeSig(candidate);
+        try self.ensureIndex(alloc);
+        const occ = &self.occ.?;
+
+        // "Is candidate subsumed by an existing entry D" (D subset
+        // candidate)? D need not contain candidate's cheapest-to-scan
+        // literal -- it only needs its OWN literals to all be in
+        // candidate -- so every literal of candidate must be checked
+        // (unlike subsumption.zig's global batch pass, an already-settled
+        // entry here never gets a "later turn" to discover it subsumes a
+        // new arrival from its own side, so this direction can't be
+        // narrowed to a single pivot the way that pass's queue-driven
+        // eventual-reprocessing argument allows).
+        // No snapshot needed: this loop never mutates `occ`/`items`, only
+        // reads and possibly returns early.
+        for (candidate) |l| {
+            const list = occ.getPtr(l) orelse continue;
+            for (list.items) |idx| {
+                const k = self.items.items[idx] orelse continue;
+                if (subsumesSig(self.sigs.items[idx], k, candidate_sig, candidate)) return; // candidate adds nothing new
+            }
+        }
+
+        // "Does candidate subsume an existing entry D" (candidate subset
+        // D)? Any such D must contain EVERY literal of candidate, so it
+        // appears in occ[l] for every l in candidate -- scanning just the
+        // cheapest one is sufficient here.
+        var pivot = candidate[0];
+        var pivot_len = occLen(occ, pivot);
+        for (candidate[1..]) |l| {
+            const len = occLen(occ, l);
+            if (len < pivot_len) {
+                pivot = l;
+                pivot_len = len;
+            }
+        }
+        // No snapshot needed here either: this loop only nulls out entries
+        // in `self.items`, never appends/removes from `occ[pivot]`'s own
+        // list (that only happens once, below, for candidate's own
+        // literals, after this loop has finished).
+        if (occ.getPtr(pivot)) |list| {
+            for (list.items) |idx| {
+                const k = self.items.items[idx] orelse continue;
+                if (subsumesSig(candidate_sig, candidate, self.sigs.items[idx], k)) {
+                    self.items.items[idx] = null;
+                    self.live_count -= 1;
+                }
+            }
+        }
+
+        const new_idx = self.items.items.len;
+        try self.items.append(alloc, candidate);
+        try self.sigs.append(alloc, candidate_sig);
+        self.live_count += 1;
+        for (candidate) |l| try occAdd(alloc, occ, l, new_idx);
+    }
+
+    fn toOwnedSlice(self: *IndexedKept, alloc: Allocator) ![][]i32 {
+        var out = std.ArrayList([]i32).empty;
+        for (self.items.items) |maybe_c| {
+            if (maybe_c) |c| try out.append(alloc, c);
+        }
+        return out.toOwnedSlice(alloc);
     }
 };
-
-const ClauseSet = std.HashMap([]const i32, void, ClauseSetContext, std.hash_map.default_max_load_percentage);
-
-fn lessAbs(_: void, a: i32, b: i32) bool {
-    return @abs(a) < @abs(b);
-}
-
-/// Canonical clause literal order for this whole pipeline: ascending by
-/// absolute value (e.g. `[1, -2, 3, -4]`), so a clause and its negated
-/// counterpart on the same variable sort adjacently and every clause has
-/// one unambiguous textual form regardless of which pass produced it.
-pub fn canonicalizeOrder(clause: []i32) void {
-    std.mem.sort(i32, clause, {}, lessAbs);
-}
-
-/// Drops exact-duplicate clauses from `clauses` (hierarchy clauses and
-/// every constraint's own clauses, already concatenated by the caller),
-/// keeping the first occurrence of each distinct literal set. Canonicalizes
-/// every clause's literal order first (ascending by absolute value -- see
-/// `canonicalizeOrder`), both so equal-content clauses compare equal
-/// regardless of which pass produced them and so the returned clauses are
-/// all in the same canonical form. O(n) average: one hash lookup/insert
-/// per clause, not a scan against a growing list.
-pub fn dedupExact(alloc: Allocator, clauses: []const []i32) ![][]i32 {
-    for (clauses) |c| canonicalizeOrder(c);
-    var seen = ClauseSet.init(alloc);
-    try seen.ensureTotalCapacity(@intCast(clauses.len));
-    var out = std.ArrayList([]i32).empty;
-    for (clauses) |c| {
-        if (seen.contains(c)) continue;
-        try seen.put(c, {});
-        try out.append(alloc, c);
-    }
-    return out.toOwnedSlice(alloc);
-}
 
 fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *Node) CnfError![][]i32 {
     switch (n.*) {
@@ -490,19 +595,19 @@ fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *N
         .and_ => |ab| {
             const a = try buildCnf(alloc, features2ids, ab[0]);
             const b = try buildCnf(alloc, features2ids, ab[1]);
-            var kept = std.ArrayList([]i32).empty;
-            for (a) |c| try addWithSubsumption(alloc, &kept, c);
-            for (b) |c| try addWithSubsumption(alloc, &kept, c);
+            var kept = IndexedKept{};
+            for (a) |c| try kept.insert(alloc, c);
+            for (b) |c| try kept.insert(alloc, c);
             return kept.toOwnedSlice(alloc);
         },
         .or_ => |ab| {
             const a = try buildCnf(alloc, features2ids, ab[0]);
             const b = try buildCnf(alloc, features2ids, ab[1]);
-            var kept = std.ArrayList([]i32).empty;
+            var kept = IndexedKept{};
             for (a) |ca| {
                 for (b) |cb| {
                     const u = (try unionClause(alloc, ca, cb)) orelse continue;
-                    try addWithSubsumption(alloc, &kept, u);
+                    try kept.insert(alloc, u);
                 }
             }
             return kept.toOwnedSlice(alloc);
@@ -577,25 +682,82 @@ test "comparison is skipped" {
     try std.testing.expect(parsed.saw_comparison);
 }
 
-test "dedupExact drops an exact duplicate regardless of literal order" {
+test "IndexedKept: subsumption still correct once past the linear-scan threshold" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var c1 = try alloc.alloc(i32, 2);
-    c1[0] = -1;
-    c1[1] = 2;
-    var c2 = try alloc.alloc(i32, 2); // same clause, literals reversed
-    c2[0] = 2;
-    c2[1] = -1;
-    var c3 = try alloc.alloc(i32, 2); // genuinely different
-    c3[0] = -1;
-    c3[1] = 3;
-    const clauses = [_][]i32{ c1, c2, c3 };
+    var kept = IndexedKept{};
+    // Push well past index_threshold (32) with distinct unit clauses so
+    // every insertion after the threshold goes through the indexed path.
+    var i: i32 = 1;
+    while (i <= 50) : (i += 1) {
+        const c = try alloc.alloc(i32, 1);
+        c[0] = i;
+        try kept.insert(alloc, c);
+    }
+    try std.testing.expectEqual(@as(usize, 50), kept.live_count);
 
-    const out = try dedupExact(alloc, &clauses);
-    try std.testing.expectEqual(@as(usize, 2), out.len);
-    try std.testing.expectEqualSlices(i32, &[_]i32{ -1, 2 }, out[0]);
-    try std.testing.expectEqualSlices(i32, &[_]i32{ -1, 3 }, out[1]);
+    // A clause subsumed by an existing unit clause (here [1]) must still
+    // be rejected via the indexed path.
+    const redundant = try alloc.alloc(i32, 2);
+    redundant[0] = 1;
+    redundant[1] = 99;
+    try kept.insert(alloc, redundant);
+    try std.testing.expectEqual(@as(usize, 50), kept.live_count);
+
+    // A new unit clause on a fresh variable must evict any existing
+    // clause it subsumes (here, none exist yet for var 100, so it's a
+    // pure addition) and still be findable afterwards.
+    const fresh = try alloc.alloc(i32, 1);
+    fresh[0] = 100;
+    try kept.insert(alloc, fresh);
+    try std.testing.expectEqual(@as(usize, 51), kept.live_count);
+
+    const out = try kept.toOwnedSlice(alloc);
+    try std.testing.expectEqual(@as(usize, 51), out.len);
+    var found_redundant = false;
+    for (out) |c| {
+        if (c.len == 2 and c[0] == 1 and c[1] == 99) found_redundant = true;
+    }
+    try std.testing.expect(!found_redundant);
 }
+
+test "IndexedKept: a later clause evicts an earlier one it subsumes, past threshold" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var kept = IndexedKept{};
+    // Fill with unrelated clauses to cross the threshold first.
+    var i: i32 = 1;
+    while (i <= 40) : (i += 1) {
+        const c = try alloc.alloc(i32, 2);
+        c[0] = i;
+        c[1] = i + 1000;
+        try kept.insert(alloc, c);
+    }
+    // Now insert a longer clause on a fresh variable pair...
+    const long_clause = try alloc.alloc(i32, 3);
+    long_clause[0] = 5000;
+    long_clause[1] = 5001;
+    long_clause[2] = 5002;
+    try kept.insert(alloc, long_clause);
+    try std.testing.expectEqual(@as(usize, 41), kept.live_count);
+
+    // ...then a unit clause that subsumes it -- must evict the longer one
+    // even though both were inserted after crossing the index threshold.
+    const unit = try alloc.alloc(i32, 1);
+    unit[0] = 5001;
+    try kept.insert(alloc, unit);
+    try std.testing.expectEqual(@as(usize, 41), kept.live_count); // long_clause evicted, unit added
+
+    const out = try kept.toOwnedSlice(alloc);
+    var found_long = false;
+    for (out) |c| {
+        if (c.len == 3) found_long = true;
+    }
+    try std.testing.expect(!found_long);
+}
+
 

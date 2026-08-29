@@ -49,6 +49,7 @@ pub fn build(b: *std.Build) void {
         "src/constraint.zig",
         "src/cnf.zig",
         "src/recovery.zig",
+        "src/subsumption.zig",
     };
     for (test_files) |file| {
         const t = b.addTest(.{

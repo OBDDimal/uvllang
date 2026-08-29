@@ -20,6 +20,7 @@ const parser = @import("parser.zig");
 const builder_mod = @import("builder.zig");
 const cnf = @import("cnf.zig");
 const constraint = @import("constraint.zig");
+const subsumption = @import("subsumption.zig");
 const recovery = @import("recovery.zig");
 
 const gpa = std.heap.smp_allocator;
@@ -125,18 +126,12 @@ fn sourceToCnfImpl(
         }
     }
 
-    const deduped = try constraint.dedupExact(alloc, clauses.items);
-
-    var kept = std.ArrayList([]const i32).empty;
-    var n_taut: usize = 0;
-    for (deduped) |c| {
-        if (cnf.isTautological(c)) {
-            n_taut += 1;
-            continue;
-        }
-        try kept.append(alloc, c);
-    }
-    if (n_taut > 0) std.debug.print("Info: Removed {d} tautological clauses\n", .{n_taut});
+    const cclauses: []const []const i32 = @ptrCast(clauses.items);
+    const simplified = try subsumption.simplify(alloc, cclauses, false);
+    if (simplified.removed_by_subsumption > 0) std.debug.print("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
+    if (simplified.literals_removed_by_ssr > 0) std.debug.print("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
+    if (simplified.tautologies_removed > 0) std.debug.print("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
+    if (simplified.unsat) std.debug.print("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
 
     const b = &result.builder;
     if (b.cardinality_group_count > 0) std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF\n", .{b.cardinality_group_count});
@@ -159,7 +154,7 @@ fn sourceToCnfImpl(
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
-    try cnf.writeDimacs(alloc, &aw.writer, &ids, kept.items);
+    try cnf.writeDimacs(alloc, &aw.writer, &ids, simplified.clauses);
     const owned = try aw.toOwnedSlice();
     out_ptr.* = owned.ptr;
     out_len.* = owned.len;
@@ -394,13 +389,8 @@ fn hierarchyToCnfImpl(
         for (node_clauses) |c| try clauses.append(alloc, c);
     }
 
-    const deduped = try constraint.dedupExact(alloc, clauses.items);
-
-    var kept = std.ArrayList([]const i32).empty;
-    for (deduped) |c| {
-        if (cnf.isTautological(c)) continue;
-        try kept.append(alloc, c);
-    }
+    const cclauses: []const []const i32 = @ptrCast(clauses.items);
+    const simplified = try subsumption.simplify(alloc, cclauses, false);
 
     out_non_boolean.* = .{
         .attribute_ref_constraints = attribute_ref_constraints,
@@ -409,7 +399,7 @@ fn hierarchyToCnfImpl(
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
-    try cnf.writeDimacs(alloc, &aw.writer, &ids, kept.items);
+    try cnf.writeDimacs(alloc, &aw.writer, &ids, simplified.clauses);
     const owned = try aw.toOwnedSlice();
     out_ptr.* = owned.ptr;
     out_len.* = owned.len;

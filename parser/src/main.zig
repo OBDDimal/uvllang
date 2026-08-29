@@ -3,10 +3,11 @@ const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
 const cnf = @import("cnf.zig");
 const constraint = @import("constraint.zig");
+const subsumption = @import("subsumption.zig");
 
 fn usage() void {
     std.debug.print(
-        \\usage: uvl2cnf <input.uvl> [output.dimacs] [-v|--verbose]
+        \\usage: uvl2cnf <input.uvl> [output.dimacs] [-v|--verbose] [--simplify]
         \\
         \\Converts a UVL feature model to CNF in DIMACS format. Lexing,
         \\parsing, CNF generation, and writing the output all run natively
@@ -14,6 +15,11 @@ fn usage() void {
         \\
         \\If output.dimacs is omitted, defaults to <input_basename>.dimacs
         \\in the current directory.
+        \\
+        \\--simplify runs a global subsumption-elimination pass over the
+        \\full clause set (hierarchy + constraints) before writing it out,
+        \\removing redundant/subsumed clauses at the cost of extra runtime
+        \\on large models. Off by default.
         \\
     , .{});
 }
@@ -37,6 +43,7 @@ pub fn main(init: std.process.Init) !u8 {
     var in_path: ?[]const u8 = null;
     var out_path: ?[]const u8 = null;
     var parse_only = false;
+    var do_simplify = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -48,6 +55,8 @@ pub fn main(init: std.process.Init) !u8 {
             // extra verbose-only detail to gate on this.
         } else if (std.mem.eql(u8, arg, "--parse-only")) {
             parse_only = true;
+        } else if (std.mem.eql(u8, arg, "--simplify")) {
+            do_simplify = true;
         } else if (in_path == null) {
             in_path = arg;
         } else if (out_path == null) {
@@ -144,22 +153,23 @@ pub fn main(init: std.process.Init) !u8 {
         std.debug.print("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
     }
 
-    const deduped = try constraint.dedupExact(alloc, clauses.items);
-    if (deduped.len < clauses.items.len) {
-        std.debug.print("Info: Removed {d} duplicate clause(s)\n", .{clauses.items.len - deduped.len});
-    }
-
-    var kept = std.ArrayList([]const i32).empty;
-    var n_taut: usize = 0;
-    for (deduped) |c| {
-        if (cnf.isTautological(c)) {
-            n_taut += 1;
-            continue;
+    const cclauses: []const []const i32 = @ptrCast(clauses.items);
+    var out_clauses: []const []const i32 = cclauses;
+    if (do_simplify) {
+        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        if (simplified.removed_by_subsumption > 0) {
+            std.debug.print("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
         }
-        try kept.append(alloc, c);
-    }
-    if (n_taut > 0) {
-        std.debug.print("Info: Removed {d} tautological clauses\n", .{n_taut});
+        if (simplified.literals_removed_by_ssr > 0) {
+            std.debug.print("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
+        }
+        if (simplified.tautologies_removed > 0) {
+            std.debug.print("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
+        }
+        if (simplified.unsat) {
+            std.debug.print("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
+        }
+        out_clauses = simplified.clauses;
     }
 
     var out_file = std.Io.Dir.cwd().createFile(io, out_file_name, .{}) catch |err| {
@@ -169,7 +179,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer out_file.close(io);
     var buf: [1 << 16]u8 = undefined;
     var writer = out_file.writer(io, &buf);
-    try cnf.writeDimacs(alloc, &writer.interface, &ids, kept.items);
+    try cnf.writeDimacs(alloc, &writer.interface, &ids, out_clauses);
     try writer.interface.flush();
 
     std.debug.print("Saved DIMACS to {s}\n", .{out_file_name});
