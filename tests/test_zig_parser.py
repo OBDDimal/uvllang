@@ -89,7 +89,12 @@ def _python_dimacs(uvl_path, out_path):
     # cardinality/arithmetic constructs on purpose, to check the CNF these
     # backends produce still matches the native binary's -- that's a CNF
     # equivalence check, not the NonBooleanConstructError policy.
-    model = UVL(from_file=uvl_path, backend="lark", drop_non_boolean=True)
+    # simplify=True: matches _run_zig's --simplify, so both sides run the
+    # same global subsumption pass -- both default to off now (CLI and API
+    # behavior intentionally match, see docs/pipeline_clause_dedup.md), so
+    # without this the two sides would compare unsimplified against
+    # simplified and always mismatch.
+    model = UVL(from_file=uvl_path, backend="lark", drop_non_boolean=True, simplify=True)
     features2ids = {f: i + 1 for i, f in enumerate(sorted(set(model.features)))}
     model.to_cnf(features2ids, verbose_info=False).to_file(out_path)
 

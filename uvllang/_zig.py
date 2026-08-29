@@ -86,6 +86,7 @@ def _load_lib():
     lib.uvl_source_to_cnf.argtypes = [
         ctypes.c_char_p,
         ctypes.c_size_t,
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(_CNonBooleanCounts),
@@ -104,6 +105,7 @@ def _load_lib():
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char_p),
         ctypes.c_size_t,
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(_CNonBooleanCounts),
@@ -121,6 +123,7 @@ def _load_lib():
     lib.uvl_dimacs_to_uvl.argtypes = [
         ctypes.c_char_p,
         ctypes.c_size_t,
+        ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
@@ -170,7 +173,7 @@ def _take_dimacs_buffer(lib, out_ptr, out_len):
         lib.uvl_free_buffer(out_ptr, out_len)
 
 
-def parse_source_to_cnf(source: str):
+def parse_source_to_cnf(source: str, simplify: bool = False):
     """Full pipeline: UVL source text -> (clauses, id_to_name, non_boolean).
 
     `non_boolean` is a dict of counts for constructs above the plain
@@ -178,6 +181,12 @@ def parse_source_to_cnf(source: str):
     already printed its own warnings for each of them to stderr by the
     time this returns; the caller (uvllang.main.UVL) decides whether any
     of them should also raise.
+
+    `simplify` gates the global subsumption/SSR-disabled clause-set
+    simplification pass (see docs/pipeline_clause_dedup.md) -- off by
+    default, matching the `uvl2cnf` CLI's `--simplify` flag, so this API
+    and the CLI produce the same clause set for the same input unless the
+    caller explicitly opts in.
     """
     lib = _get_lib()
     src_bytes = source.encode("utf-8")
@@ -187,6 +196,7 @@ def parse_source_to_cnf(source: str):
     rc = lib.uvl_source_to_cnf(
         src_bytes,
         len(src_bytes),
+        1 if simplify else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
         ctypes.byref(non_boolean),
@@ -314,11 +324,12 @@ def parse_source_full(source: str) -> dict:
     return _decode_parse_source_full(data)
 
 
-def hierarchy_to_cnf(features, root, feature_hierarchy, constraints):
+def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: bool = False):
     """Only the CNF-generation step, on an already-parsed hierarchy.
 
     features: list[str], every feature name (quotes included if quoted).
     root: str | None, the root feature name.
+    simplify: see parse_source_to_cnf -- off by default, same semantics.
     feature_hierarchy: dict as produced by BaseFeatureModelBuilder, e.g.
         {parent: {"children": [(child, "mandatory"/"optional"), ...],
                   "groups": [("or"/"xor"/..., [member, ...]), ...]}}.
@@ -388,6 +399,7 @@ def hierarchy_to_cnf(features, root, feature_hierarchy, constraints):
         len(c_members_arr),
         cons_arr,
         len(cons_bytes),
+        1 if simplify else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
         ctypes.byref(non_boolean),
@@ -397,8 +409,19 @@ def hierarchy_to_cnf(features, root, feature_hierarchy, constraints):
     return clauses, id_to_name, non_boolean.as_dict()
 
 
-def dimacs_to_uvl(dimacs_bytes: bytes, optimize: bool = False, by_name: bool = False) -> str:
-    """CNF -> UVL recovery (any2uvl)."""
+def dimacs_to_uvl(
+    dimacs_bytes: bytes,
+    optimize: bool = False,
+    by_name: bool = False,
+    infer_propagation: bool = False,
+) -> str:
+    """CNF -> UVL recovery (any2uvl). `infer_propagation` enables the
+    experimental, opt-in propagation-based (unit-propagation/BCP)
+    implication recovery pass -- see recovery.zig's
+    `augmentGraphWithPropagation` doc comment. Off by default: it's more
+    expensive than the default literal-clause-shape matching and is meant
+    to be benchmarked before ever being turned on by default.
+    """
     lib = _get_lib()
     out_ptr = ctypes.c_void_p()
     out_len = ctypes.c_size_t()
@@ -407,6 +430,7 @@ def dimacs_to_uvl(dimacs_bytes: bytes, optimize: bool = False, by_name: bool = F
         len(dimacs_bytes),
         1 if optimize else 0,
         1 if by_name else 0,
+        1 if infer_propagation else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
     )

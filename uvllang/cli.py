@@ -2,10 +2,16 @@
 """
 CLI tools for converting UVL files to SMT format and DIMACS back to UVL.
 
-uvl2cnf is NOT here: it's a pure native binary (parser/zig-out/bin/uvl2cnf,
-built by `zig build` in parser/) with no Python involved at all, not even
-at startup. See uvllang.main.UVL(...).to_cnf() for the equivalent Python
-API, which supports backend="lark"/"antlr" in addition to the zig default.
+uvl2cnf and uvl2uvl are NOT here: they're pure native binaries
+(parser/zig-out/bin/{uvl2cnf,uvl2uvl}, built by `zig build` in parser/)
+with no Python involved at all, not even at startup. See
+uvllang.main.UVL(...).to_cnf() for the equivalent Python API, which
+supports backend="lark"/"antlr" in addition to the zig default.
+
+uvl2uvl reads a UVL model and writes a semantically equivalent UVL model
+back out, keeping the input's feature hierarchy exactly as-is while
+dropping any cross-tree constraint that's fully redundant given the
+hierarchy and the other constraints (see `uvl2uvl --help`).
 """
 
 import sys
@@ -133,6 +139,13 @@ Examples:
         action="store_true",
         help="After --optimize, reparse the written file and check it's still equivalent to the input DIMACS",
     )
+    parser.add_argument(
+        "--propagate",
+        action="store_true",
+        help="Experimental: recover parent/child edges via unit propagation (BCP) in addition to "
+        "literal clause matching, so edges eliminated by CNF subsumption/simplification can still "
+        "be found. More expensive; off by default; meant for debugging/benchmarking for now.",
+    )
 
     args = parser.parse_args()
 
@@ -155,7 +168,14 @@ Examples:
         if args.verbose:
             print(f"Converting {input_file} to UVL format...")
 
-        UVL.from_cnf(input_file, output_file, optimize=args.optimize, by_name=args.byname, verify=args.verify)
+        UVL.from_cnf(
+            input_file,
+            output_file,
+            optimize=args.optimize,
+            by_name=args.byname,
+            verify=args.verify,
+            infer_propagation=args.propagate,
+        )
 
         print(f"Successfully converted to UVL format: {output_file}")
 

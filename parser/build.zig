@@ -24,6 +24,16 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    const uvl2uvl_exe = b.addExecutable(.{
+        .name = "uvl2uvl",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/uvl2uvl.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(uvl2uvl_exe);
+
     const lib = b.addLibrary(.{
         .name = "uvlparser",
         .linkage = .dynamic,
@@ -50,6 +60,7 @@ pub fn build(b: *std.Build) void {
         "src/cnf.zig",
         "src/recovery.zig",
         "src/subsumption.zig",
+        "src/uvl2uvl.zig",
     };
     for (test_files) |file| {
         const t = b.addTest(.{

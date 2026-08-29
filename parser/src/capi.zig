@@ -86,6 +86,7 @@ pub const NonBooleanCounts = extern struct {
 fn sourceToCnfImpl(
     alloc: Allocator,
     source: []const u8,
+    do_simplify: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -127,11 +128,15 @@ fn sourceToCnfImpl(
     }
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
-    const simplified = try subsumption.simplify(alloc, cclauses, false);
-    if (simplified.removed_by_subsumption > 0) std.debug.print("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
-    if (simplified.literals_removed_by_ssr > 0) std.debug.print("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
-    if (simplified.tautologies_removed > 0) std.debug.print("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
-    if (simplified.unsat) std.debug.print("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
+    var out_clauses: []const []const i32 = cclauses;
+    if (do_simplify) {
+        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        if (simplified.removed_by_subsumption > 0) std.debug.print("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
+        if (simplified.literals_removed_by_ssr > 0) std.debug.print("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
+        if (simplified.tautologies_removed > 0) std.debug.print("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
+        if (simplified.unsat) std.debug.print("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
+        out_clauses = simplified.clauses;
+    }
 
     const b = &result.builder;
     if (b.cardinality_group_count > 0) std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF\n", .{b.cardinality_group_count});
@@ -154,22 +159,28 @@ fn sourceToCnfImpl(
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
-    try cnf.writeDimacs(alloc, &aw.writer, &ids, simplified.clauses);
+    try cnf.writeDimacs(alloc, &aw.writer, &ids, out_clauses);
     const owned = try aw.toOwnedSlice();
     out_ptr.* = owned.ptr;
     out_len.* = owned.len;
 }
 
+/// `do_simplify`: gates the global subsumption/SSR-disabled simplify pass,
+/// matching the `uvl2cnf` CLI's `--simplify` flag -- off by default there
+/// and here, so the CLI and the Python API produce the same clause set for
+/// the same input unless the caller explicitly opts in. See
+/// docs/pipeline_clause_dedup.md.
 export fn uvl_source_to_cnf(
     src_ptr: [*]const u8,
     src_len: usize,
+    do_simplify: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
-    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], out_ptr, out_len, out_non_boolean) catch |err| {
+    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], do_simplify != 0, out_ptr, out_len, out_non_boolean) catch |err| {
         setError("uvl_source_to_cnf: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
@@ -307,6 +318,7 @@ fn hierarchyToCnfImpl(
     groups: []const CGroup,
     group_members: []const usize,
     constraints: []const [*:0]const u8,
+    do_simplify: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -390,7 +402,11 @@ fn hierarchyToCnfImpl(
     }
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
-    const simplified = try subsumption.simplify(alloc, cclauses, false);
+    var out_clauses: []const []const i32 = cclauses;
+    if (do_simplify) {
+        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        out_clauses = simplified.clauses;
+    }
 
     out_non_boolean.* = .{
         .attribute_ref_constraints = attribute_ref_constraints,
@@ -399,7 +415,7 @@ fn hierarchyToCnfImpl(
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
-    try cnf.writeDimacs(alloc, &aw.writer, &ids, simplified.clauses);
+    try cnf.writeDimacs(alloc, &aw.writer, &ids, out_clauses);
     const owned = try aw.toOwnedSlice();
     out_ptr.* = owned.ptr;
     out_len.* = owned.len;
@@ -425,6 +441,7 @@ export fn uvl_hierarchy_to_cnf(
     n_group_members: usize,
     constraints_ptr: [*]const [*:0]const u8,
     n_constraints: usize,
+    do_simplify: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -439,6 +456,7 @@ export fn uvl_hierarchy_to_cnf(
         groups_ptr[0..n_groups],
         group_members_ptr[0..n_group_members],
         constraints_ptr[0..n_constraints],
+        do_simplify != 0,
         out_ptr,
         out_len,
         out_non_boolean,
@@ -450,20 +468,23 @@ export fn uvl_hierarchy_to_cnf(
 }
 
 /// CNF -> UVL recovery (any2uvl). `optimize`/`by_name` gate the greedy
-/// CTC-reduction pass and its name-similarity parent tie-break; see
-/// recovery.zig for the full algorithm.
+/// CTC-reduction pass and its name-similarity parent tie-break;
+/// `infer_propagation` gates the experimental, opt-in propagation-based
+/// implication recovery (see recovery.zig's `augmentGraphWithPropagation`
+/// doc comment); see recovery.zig for the full algorithm.
 export fn uvl_dimacs_to_uvl(
     dimacs_ptr: [*]const u8,
     dimacs_len: usize,
     optimize: u8,
     by_name: u8,
+    infer_propagation: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
 
-    const text = recovery.recover(arena_state.allocator(), gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0) catch |err| {
+    const text = recovery.recover(arena_state.allocator(), gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0, infer_propagation != 0) catch |err| {
         setError("uvl_dimacs_to_uvl: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };

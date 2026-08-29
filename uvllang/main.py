@@ -96,6 +96,14 @@ class UVL:
     continue instead. Typed features and inert value attributes are
     always just warned about, never raised on, since they don't affect the
     Boolean skeleton's correctness and are common in real models.
+
+    simplify=False (default) matches the `uvl2cnf` CLI's default: to_cnf()
+    returns the raw, unminimized clause set (hierarchy + constraints
+    concatenated, deduped/tautology-stripped only within each constraint's
+    own NNF-to-CNF conversion). Pass simplify=True to additionally run the
+    global subsumption/SSR-disabled clause-set simplification pass (see
+    docs/pipeline_clause_dedup.md) that `uvl2cnf --simplify` runs, at the
+    cost of extra conversion time on large models.
     """
 
     def __init__(
@@ -105,6 +113,7 @@ class UVL:
         use_antlr=False,
         backend=None,
         drop_non_boolean=False,
+        simplify=False,
     ):
         # Exactly one of from_file or from_str must be specified
         if from_file is None and from_str is None:
@@ -128,6 +137,7 @@ class UVL:
         self._backend = backend
         self._use_antlr = backend == "antlr"
         self._drop_non_boolean = drop_non_boolean
+        self._simplify = simplify
         self._file_path = from_file
         self._content = from_str
         self._tree = None
@@ -165,15 +175,19 @@ class UVL:
         return self._zig_full
 
     @classmethod
-    def from_cnf(cls, filepath, file_out, optimize=False, by_name=False, verify=False):
+    def from_cnf(cls, filepath, file_out, optimize=False, by_name=False, verify=False, infer_propagation=False):
         """CNF -> UVL recovery (any2uvl). The algorithm runs entirely in the
         Zig backend (uvllang._zig.dimacs_to_uvl); this handles file I/O and
-        the optional --verify round-trip check.
+        the optional --verify round-trip check. `infer_propagation` enables
+        the experimental, opt-in propagation-based implication recovery
+        pass (off by default; see uvllang._zig.dimacs_to_uvl).
         """
         with open(filepath, "rb") as f:
             dimacs_bytes = f.read()
 
-        uvl_text = _zig.dimacs_to_uvl(dimacs_bytes, optimize=optimize, by_name=by_name)
+        uvl_text = _zig.dimacs_to_uvl(
+            dimacs_bytes, optimize=optimize, by_name=by_name, infer_propagation=infer_propagation
+        )
 
         with open(file_out, "w", encoding="utf-8") as f:
             f.write(uvl_text)
@@ -230,7 +244,7 @@ class UVL:
         if self._backend == "zig":
             self._source = self._read_content()
             self._zig_clauses, self._zig_id_to_name, self._non_boolean = _zig.parse_source_to_cnf(
-                self._source
+                self._source, simplify=self._simplify
             )
             return
 
@@ -294,7 +308,7 @@ class UVL:
         # of them regardless, so this changes nothing about which clauses
         # get generated, only which get correctly counted.
         self._zig_clauses, self._zig_id_to_name, self._non_boolean = _zig.hierarchy_to_cnf(
-            features, root, self._builder.feature_hierarchy, self.constraints
+            features, root, self._builder.feature_hierarchy, self.constraints, simplify=self._simplify
         )
         self._non_boolean.update(
             cardinality_groups=self._builder.cardinality_group_count,

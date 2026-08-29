@@ -11,13 +11,18 @@ reconstruction, which depends on hierarchy edges surviving as
 untouched/positionally-stable clauses. The fixture below intentionally does
 not pass `--simplify`, so parent/group recovery works as before.
 
-The two DIMACS-equivalence tests are still marked xfail: they compare the
-CLI's (unsimplified) DIMACS output against `UVL(...).to_cnf(...)`, which
-goes through the Python API (`capi.zig`) and still always runs the
-simplification pass unconditionally -- so the two sides are expected to
-differ by exactly that pass's reductions. This is a known, deferred
-mismatch between the two entry points, not a recovery regression -- see
-docs/pipeline_clause_dedup.md.
+`UVL.to_cnf()` (the Python API, via `capi.zig`) now defaults to the same
+unsimplified behavior as the CLI (a `simplify=True` kwarg opts in, mirroring
+`--simplify`), so the two entry points produce the same clause set for the
+same input by default -- the DIMACS-equivalence tests below no longer need
+an xfail for that reason.
+
+`_dimacs_equivalent` checks genuine logical equivalence via SAT, not exact
+clause-set identity: `any2uvl --optimize` also runs a subsumption cleanup
+pass over the final residual CTCs (recovery.zig), which can legitimately
+drop a CTC that another surviving clause already subsumes -- the recovered
+and original clause sets can then differ while still being exactly
+equivalent formulas.
 """
 
 import os
@@ -70,6 +75,12 @@ def _extract_hierarchy(uvl_file):
     return parents, groups
 
 
+def _entailed(solver, clause):
+    """True iff `solver`'s clause set entails `clause` (unsat with every
+    literal of `clause` negated as an assumption)."""
+    return not solver.solve(assumptions=[-l for l in clause])
+
+
 def _dimacs_equivalent(uvl_file, dimacs_file):
     orig_cnf = CNF(from_file=dimacs_file)
     ids2features = {}
@@ -82,7 +93,25 @@ def _dimacs_equivalent(uvl_file, dimacs_file):
     rec_clauses = UVL(from_file=uvl_file).to_cnf(features2ids).clauses
     orig = frozenset(tuple(sorted(c)) for c in orig_cnf.clauses)
     rec  = frozenset(tuple(sorted(c)) for c in rec_clauses)
-    return orig == rec, len(orig - rec), len(rec - orig)
+    missing = orig - rec
+    extra = rec - orig
+
+    if not missing and not extra:
+        return True, 0, 0
+
+    from pysat.solvers import Glucose3
+
+    ok = True
+    if missing:
+        with Glucose3(bootstrap_with=[list(c) for c in rec]) as solver:
+            if not all(_entailed(solver, c) for c in missing):
+                ok = False
+    if extra:
+        with Glucose3(bootstrap_with=[list(c) for c in orig]) as solver:
+            if not all(_entailed(solver, c) for c in extra):
+                ok = False
+
+    return ok, len(missing), len(extra)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +152,6 @@ def recovery_files():
 # DIMACS equivalence
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="CLI (unsimplified) vs to_cnf() (always simplified) DIMACS mismatch -- see docs/pipeline_clause_dedup.md", strict=False)
 def test_baseline_dimacs_equivalence(recovery_files):
     ok, missing, extra = _dimacs_equivalent(
         recovery_files["baseline"], recovery_files["dimacs"]
@@ -131,7 +159,6 @@ def test_baseline_dimacs_equivalence(recovery_files):
     assert ok, f"Baseline DIMACS mismatch: missing={missing} extra={extra}"
 
 
-@pytest.mark.xfail(reason="CLI (unsimplified) vs to_cnf() (always simplified) DIMACS mismatch -- see docs/pipeline_clause_dedup.md", strict=False)
 def test_optimized_dimacs_equivalence(recovery_files):
     ok, missing, extra = _dimacs_equivalent(
         recovery_files["optimized"], recovery_files["dimacs"]

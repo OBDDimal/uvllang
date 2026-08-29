@@ -28,7 +28,7 @@ EXAMPLE_FILES = [
         "features": 2513,
         "bool_constraints": 2833,
         "arith_constraints": 0,
-        "cnf_clauses": 10292,
+        "cnf_clauses": 10311,
         "has_attributes": True,
     },
     {
@@ -36,7 +36,7 @@ EXAMPLE_FILES = [
         "features": 173,
         "bool_constraints": 0,
         "arith_constraints": 0,
-        "cnf_clauses": 288,
+        "cnf_clauses": 289,
         "has_attributes": False,
     },
     {
@@ -44,7 +44,7 @@ EXAMPLE_FILES = [
         "features": 3,
         "bool_constraints": 0,
         "arith_constraints": 24,
-        "cnf_clauses": 2,
+        "cnf_clauses": 4,
         "has_attributes": True,
     },
     {
@@ -52,7 +52,7 @@ EXAMPLE_FILES = [
         "features": 3,
         "bool_constraints": 0,
         "arith_constraints": 2,
-        "cnf_clauses": 1,
+        "cnf_clauses": 3,
         "has_attributes": True,
         "has_aggregates": True,
     },
@@ -61,7 +61,7 @@ EXAMPLE_FILES = [
         "features": 3,
         "bool_constraints": 0,
         "arith_constraints": 2,
-        "cnf_clauses": 1,
+        "cnf_clauses": 3,
         "has_attributes": True,
         "has_aggregates": True,
     },
@@ -70,7 +70,7 @@ EXAMPLE_FILES = [
         "features": 3,
         "bool_constraints": 0,
         "arith_constraints": 3,
-        "cnf_clauses": 1,
+        "cnf_clauses": 3,
         "has_types": True,
         "has_len_function": True,
     },
@@ -79,7 +79,7 @@ EXAMPLE_FILES = [
         "features": 4,
         "bool_constraints": 0,
         "arith_constraints": 0,
-        "cnf_clauses": 5,
+        "cnf_clauses": 8,
         "has_cardinality": True,
     },
 ]
@@ -219,15 +219,9 @@ features
             model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
+            assert [-2, 1] in cnf.clauses
             assert [-1, 2] in cnf.clauses
-            # The always-emitted child=>parent edge ([-2, 1], i.e. BChild
-            # implies ARoot) is legitimately eliminated: with ARoot forced
-            # true by the root unit clause [1], that edge is trivially
-            # subsumed by [1] ({1} subset {-2,1}) -- global subsumption
-            # elimination now catches this exact-equivalence-preserving
-            # redundancy (see docs/pipeline_clause_dedup.md).
-            assert [-2, 1] not in cnf.clauses
-            assert len(cnf.clauses) == 2
+            assert len(cnf.clauses) == 3
         finally:
             os.unlink(temp_file)
 
@@ -248,16 +242,8 @@ features
             model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
             cnf = model.to_cnf()
             assert [1] in cnf.clauses
-            # The only other clause here, the always-emitted child=>parent
-            # edge ([1, -2], i.e. BOptionalChild implies ARoot), is
-            # trivially subsumed by [1] once ARoot is forced true by the
-            # root unit clause -- global subsumption elimination now
-            # catches this exact-equivalence-preserving redundancy (see
-            # docs/pipeline_clause_dedup.md). No mandatory-direction clause
-            # exists for an optional child, so nothing else survives.
-            assert [1, -2] not in cnf.clauses
-            assert [-1, 2] not in cnf.clauses
-            assert len(cnf.clauses) == 1
+            assert [-2, 1] in cnf.clauses
+            assert len(cnf.clauses) == 2
         finally:
             os.unlink(temp_file)
 
@@ -673,6 +659,6 @@ constraints
             os.path.dirname(__file__), "..", "examples", "automotive01.uvl"
         )
         model = UVL(from_file=example_file, backend=backend)
-        assert len(model.to_cnf().clauses) == 10292
+        assert len(model.to_cnf().clauses) == 10311
 
 
