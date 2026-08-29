@@ -31,15 +31,15 @@ dev = [
     "z3-solver>=4.12.0",
 ]
 
-[project.scripts]
-uvl2smt = "uvllang.cli:uvl2smt"
-any2uvl = "uvllang.cli:any2uvl"
-
-# uvl2cnf/uvl2uvl are NOT Python entry points: they're the native binaries
-# at parser/zig-out/bin/{uvl2cnf,uvl2uvl} (built by `zig build` in
-# parser/), installed onto PATH (e.g. into .venv/bin/) via setup.py's
-# scripts=, not generated as entry-point wrapper scripts by setuptools --
-# see uvllang/cli.py's module docstring.
+# uvl2cnf/uvl2uvl/uvl2smt/any2uvl are NOT Python entry points: they're the
+# native binaries at parser/zig-out/bin/{uvl2cnf,uvl2uvl,uvl2smt,any2uvl}
+# (built by `zig build` in parser/), installed onto PATH (e.g. into
+# .venv/bin/) via setup.py's scripts=, not generated as entry-point
+# wrapper scripts by setuptools -- see uvllang/cli.py's module docstring.
+# The legacy Lark/ANTLR-backed uvl2smt CLI this replaced is still
+# reachable programmatically via UVL(backend="lark"/"antlr").to_smt(), and
+# UVL.from_cnf(...) still wraps any2uvl's algorithm via ctypes for
+# programmatic use.
 
 [tool.setuptools.packages.find]
 where = ["."]

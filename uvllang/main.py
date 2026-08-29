@@ -97,6 +97,17 @@ class UVL:
     always just warned about, never raised on, since they don't affect the
     Boolean skeleton's correctness and are common in real models.
 
+    conversion=True (backend="zig" only) applies the UVLParser paper's
+    (Sundermann et al., SPLC'23) conversion strategies for two of these
+    constructs instead of dropping them: group cardinality is encoded as
+    enumerated Boolean clauses, and feature-local constraint attributes
+    are extracted as ordinary constraints. Those two categories then no
+    longer count toward NonBooleanConstructError. Feature cardinality
+    (clone multiplicity) is not covered -- see docs/non_boolean_support.md
+    for why (the paper's own prescribed strategy needs subtree cloning and
+    indexed cross-tree constraints, and calls the details "not always
+    clear" in the literature).
+
     simplify=False (default) matches the `uvl2cnf` CLI's default: to_cnf()
     returns the raw, unminimized clause set (hierarchy + constraints
     concatenated, deduped/tautology-stripped only within each constraint's
@@ -114,6 +125,7 @@ class UVL:
         backend=None,
         drop_non_boolean=False,
         simplify=False,
+        conversion=False,
     ):
         # Exactly one of from_file or from_str must be specified
         if from_file is None and from_str is None:
@@ -134,10 +146,19 @@ class UVL:
                 "Install with: pip install uvllang[antlr]"
             )
 
+        if conversion and backend != "zig":
+            raise ValueError(
+                "conversion=True requires backend='zig' -- it needs "
+                "raw-source-derived state (cardinality groups, "
+                "feature-local constraint attributes) that the Lark/ANTLR "
+                "extractors don't capture"
+            )
+
         self._backend = backend
         self._use_antlr = backend == "antlr"
         self._drop_non_boolean = drop_non_boolean
         self._simplify = simplify
+        self._conversion = conversion
         self._file_path = from_file
         self._content = from_str
         self._tree = None
@@ -227,9 +248,18 @@ class UVL:
         """
         if self._drop_non_boolean:
             return
+        # cardinality_groups/constraint_attributes are no longer silently
+        # threatening once conversion=True actually converts them (see
+        # conversion.zig) -- feature cardinality stays threatening either
+        # way, since it's not implemented yet (docs/non_boolean_support.md).
+        categories = _THREATENING_NON_BOOLEAN_CATEGORIES
+        if self._conversion:
+            categories = tuple(
+                c for c in categories if c not in ("cardinality_groups", "constraint_attributes")
+            )
         threatened = {
             category: count
-            for category in _THREATENING_NON_BOOLEAN_CATEGORIES
+            for category in categories
             if (count := self._non_boolean.get(category, 0)) > 0
         }
         if threatened:
@@ -244,7 +274,7 @@ class UVL:
         if self._backend == "zig":
             self._source = self._read_content()
             self._zig_clauses, self._zig_id_to_name, self._non_boolean = _zig.parse_source_to_cnf(
-                self._source, simplify=self._simplify
+                self._source, simplify=self._simplify, conversion=self._conversion
             )
             return
 
@@ -430,7 +460,21 @@ class UVL:
         return cnf
 
     def to_smt(self):
-        """Convert feature model to SMT-LIB 2 format."""
+        """Convert feature model to SMT-LIB 2 format.
+
+        backend="zig": a single ctypes call into the native writer
+        (parser/src/smt.zig) -- no Python-side string manipulation at
+        all. Not restricted to the plain Boolean language level (unlike
+        to_cnf()): numeric comparisons, aggregates, and typed features
+        are all represented.
+
+        backend="lark"/"antlr": the legacy Python implementation below,
+        unchanged -- these two backends have no native AST for this to
+        call into.
+        """
+        if self._backend == "zig":
+            return _zig.source_to_smt(self._source)
+
         builder = self.builder()
         lines = []
 
@@ -445,19 +489,23 @@ class UVL:
         # Declare boolean variables for features
         lines.append("; Feature declarations")
         for feature in self.features:
-            lines.append(f"(declare-const {feature} Bool)")
+            lines.append(f"(declare-const {_smt_ident(feature)} Bool)")
 
         # Declare string variables for String-typed features
         if string_features:
             lines.append("")
             lines.append("; String feature values")
             for feature in sorted(string_features):
-                lines.append(f"(declare-const {feature}_val String)")
+                lines.append(f"(declare-const {_smt_val_ident(feature)} String)")
 
-        # Declare integer/real variables for attributes
+        # Declare variables for attributes -- sort inferred per attribute
+        # from its declared value's shape (see _smt_infer_sort), falling
+        # back to Int for one referenced only from an arithmetic
+        # constraint with no matching feature-declared value.
         lines.append("")
         lines.append("; Attribute declarations")
         attribute_vars = set()
+        attr_values = {}
 
         # Collect attributes from arithmetic constraints
         for constraint in self.arithmetic_constraints:
@@ -469,11 +517,14 @@ class UVL:
 
         # Also collect all attributes from feature declarations
         for feature, attrs in self.feature_attributes.items():
-            for attr_name in attrs.keys():
-                attribute_vars.add(f"{feature}.{attr_name}")
+            for attr_name, attr_value in attrs.items():
+                key = f"{feature}.{attr_name}"
+                attribute_vars.add(key)
+                attr_values.setdefault(key, attr_value)
 
         for attr in sorted(attribute_vars):
-            lines.append(f"(declare-const {attr} Int)")
+            sort = _smt_infer_sort(attr_values[attr]) if attr in attr_values else "Int"
+            lines.append(f"(declare-const {_smt_ident(attr)} {sort})")
 
         # Attribute value constraints from feature declarations
         if self.feature_attributes:
@@ -482,38 +533,46 @@ class UVL:
             for feature, attrs in sorted(self.feature_attributes.items()):
                 for attr_name, attr_value in sorted(attrs.items()):
                     attr_ref = f"{feature}.{attr_name}"
-                    lines.append(f"(assert (= {attr_ref} {attr_value}))")
+                    value_text = attr_value.strip()
+                    if value_text and value_text[0] in "\"'":
+                        value_smt = _smt_string_literal(value_text)
+                    else:
+                        value_smt = _smt_numeral(value_text)
+                    lines.append(f"(assert (= {_smt_ident(attr_ref)} {value_smt}))")
 
         # Root feature constraint
         lines.append("")
         lines.append("; Root feature must be selected")
         if builder.root_feature:
-            lines.append(f"(assert {builder.root_feature})")
+            lines.append(f"(assert {_smt_ident(builder.root_feature)})")
 
         # Hierarchy constraints
         lines.append("")
         lines.append("; Hierarchy constraints")
         for feature, info in builder.feature_hierarchy.items():
+            feature_id = _smt_ident(feature)
             for child, child_type in info["children"]:
+                child_id = _smt_ident(child)
                 # Child implies parent
-                lines.append(f"(assert (=> {child} {feature}))")
+                lines.append(f"(assert (=> {child_id} {feature_id}))")
                 # Mandatory: parent implies child
                 if child_type == "mandatory":
-                    lines.append(f"(assert (=> {feature} {child}))")
+                    lines.append(f"(assert (=> {feature_id} {child_id}))")
 
             for group_type, group_members in info["groups"]:
+                member_ids = [_smt_ident(m) for m in group_members]
                 if group_type == "or":
                     # Parent implies at least one child
-                    or_clause = " ".join(group_members)
-                    lines.append(f"(assert (=> {feature} (or {or_clause})))")
+                    or_clause = " ".join(member_ids)
+                    lines.append(f"(assert (=> {feature_id} (or {or_clause})))")
 
                 elif group_type == "xor":
                     # Parent implies exactly one child
-                    or_clause = " ".join(group_members)
-                    lines.append(f"(assert (=> {feature} (or {or_clause})))")
+                    or_clause = " ".join(member_ids)
+                    lines.append(f"(assert (=> {feature_id} (or {or_clause})))")
                     # At most one (mutual exclusion)
-                    for i, m1 in enumerate(group_members):
-                        for m2 in group_members[i + 1 :]:
+                    for i, m1 in enumerate(member_ids):
+                        for m2 in member_ids[i + 1 :]:
                             lines.append(f"(assert (not (and {m1} {m2})))")
 
         # Boolean constraints
@@ -601,7 +660,7 @@ class UVL:
                 return f"(not {inner})"
             
             # Base case: feature name (including quoted names)
-            return expr
+            return _smt_ident(expr)
         
         return parse_boolean_expr(constraint)
 
@@ -653,17 +712,17 @@ class UVL:
                 if (
                     feature in self.feature_attributes and attr_name in self.feature_attributes[feature]
                 ):
-                    attr_ref = f"{feature}.{attr_name}"
+                    attr_ref = _smt_ident(f"{feature}.{attr_name}")
                     if self._is_feature_optional(feature):
                         # Optional: include only if selected
-                        feature_attrs.append(f"(ite {feature} {attr_ref} 0)")
+                        feature_attrs.append(f"(ite {_smt_ident(feature)} {attr_ref} 0)")
                     else:
                         # Mandatory: always include
                         feature_attrs.append(attr_ref)
 
             if not feature_attrs:
                 # Fallback for undeclared attributes
-                feature_attrs = [f"{f}.{attr_name}" for f in self.features]
+                feature_attrs = [_smt_ident(f"{f}.{attr_name}") for f in self.features]
 
             # Generate expression based on aggregate type
             if func == "sum":
@@ -679,7 +738,7 @@ class UVL:
                         and attr_name in self.feature_attributes[feature]
                     ):
                         if self._is_feature_optional(feature):
-                            count_terms.append(f"(ite {feature} 1 0)")
+                            count_terms.append(f"(ite {_smt_ident(feature)} 1 0)")
                         else:
                             count_terms.append("1")
 
@@ -793,19 +852,24 @@ class UVL:
                 feature in self.feature_types
                 and "String" in self.feature_types[feature]
             ):
-                return f"(str.len {feature}_val)"
-            return f"(str.len {feature})"
+                return f"(str.len {_smt_val_ident(feature)})"
+            return f"(str.len {_smt_ident(feature)})"
 
         # Handle string literals (convert single quotes to double quotes)
         if expr.startswith("'") and expr.endswith("'"):
-            return f'"{expr[1:-1]}"'
+            return _smt_string_literal(expr)
 
         # Handle String-typed features (convert to _val reference)
         if expr in self.feature_types and "String" in self.feature_types[expr]:
-            return f"{expr}_val"
+            return _smt_val_ident(expr)
 
-        # Base case: atomic expression (number, variable, or complete SMT prefix form)
-        return expr
+        # Base case: a number (SMT-LIB has no negative-numeral syntax --
+        # _smt_numeral wraps a leading '-'), or an atomic identifier
+        # (variable reference, or a complete SMT prefix form already
+        # handled above) -- never pipe-quote a bare numeral.
+        if re.fullmatch(r"-?\d+(\.\d+)?", expr):
+            return _smt_numeral(expr)
+        return _smt_ident(expr)
 
     def _convert_smt_prefix_args(self, expr):
         """Recursively convert arguments inside SMT prefix expressions.
@@ -901,6 +965,92 @@ class BaseFeatureExtractor:
             self.arithmetic_constraints.append(constraint_text)
         else:
             self.boolean_constraints.append(constraint_text)
+
+
+_SMT_SAFE_EXTRA_CHARS = set("~!@$%^&*_-+=<>.?/")
+
+
+def _smt_ident_safe(name):
+    """True iff `name` is already a valid bare SMT-LIB <symbol>."""
+    if not name or name[0].isdigit():
+        return False
+    return all(c.isalnum() or c in _SMT_SAFE_EXTRA_CHARS for c in name)
+
+
+def _smt_strip_quotes(name):
+    """Strips a UVL quote wrapper (`"..."`/`'...'`) when it spans the
+    entire string."""
+    if len(name) >= 2 and name[0] in "\"'" and name[-1] == name[0]:
+        return name[1:-1]
+    return name
+
+
+def _smt_ident(name):
+    """Converts a UVL identifier (feature name, or a `"feature.attr"`
+    composite built from one) into a valid SMT-LIB symbol: bare if safe,
+    `|...|`-quoted (SMT-LIB's own escape mechanism) otherwise.
+
+    Ports a bug found and fixed in parser/src/smt.zig's native writer
+    (`emitIdent`/`stripOuterQuotes`) back to this legacy Lark/ANTLR-shared
+    implementation: a UVL-quoted name emitted with its literal quote
+    characters intact is not valid SMT-LIB syntax at all (a double-quoted
+    name lexes as a *string literal*, not a symbol reference; a
+    single-quoted one has no SMT-LIB meaning as a bare token either) --
+    confirmed via z3 on real example models (`berkeleydb.uvl`,
+    `comments.uvl`; see tests/test_zig_parser.py).
+
+    A dotted composite must be quoted as one whole unit, not built from
+    an already-quoted feature name plus `.attr` -- `|Foo Bar|.attr` is
+    two separate SMT-LIB tokens, not one identifier -- so every call site
+    below builds the raw dotted string first and only then calls this.
+    """
+    stripped = _smt_strip_quotes(name)
+    if _smt_ident_safe(stripped):
+        return stripped
+    return f"|{stripped}|"
+
+
+def _smt_val_ident(feature):
+    """The `_val` companion identifier for a typed feature (see
+    `_smt_ident`'s doc comment on why the suffix must be appended before
+    quoting, not after)."""
+    combined = _smt_strip_quotes(feature) + "_val"
+    return combined if _smt_ident_safe(combined) else f"|{combined}|"
+
+
+def _smt_numeral(text):
+    """SMT-LIB has no negative-numeral syntax (`-3` isn't a valid
+    <numeral>); rewrites a leading `-` into the `(- N)` prefix form.
+    Ports the same fix from smt.zig's `writeNumeral`."""
+    text = text.strip()
+    if text.startswith("-"):
+        return f"(- {text[1:]})"
+    return text
+
+
+def _smt_string_literal(text):
+    """Converts a UVL string literal (single- or double-quoted) into an
+    SMT-LIB string literal (always double-quoted)."""
+    text = text.strip()
+    if len(text) >= 2 and text[0] in "\"'":
+        return f'"{text[1:-1]}"'
+    return f'"{text}"'
+
+
+def _smt_infer_sort(value):
+    """Infers an attribute's SMT-LIB sort from its raw declared value's
+    shape: a quoted value is a String, an unquoted one containing `.` is
+    a Real, anything else is an Int. Ports a second bug found and fixed
+    in smt.zig (`inferValueSort`): every attribute was previously
+    declared `Int` unconditionally here, which z3 rejects the moment a
+    string-valued attribute (e.g. `automotive01.uvl`'s
+    `featureDescription__`) gets asserted equal to a string literal."""
+    value = value.strip()
+    if value and value[0] in "\"'":
+        return "String"
+    if "." in value:
+        return "Real"
+    return "Int"
 
 
 def _is_arithmetic_constraint(constraint_text):

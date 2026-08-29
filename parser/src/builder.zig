@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const constraint = @import("constraint.zig");
 
 pub const ChildType = enum { mandatory, optional };
 
@@ -24,6 +25,39 @@ pub const AttributeEntry = struct {
     /// stored as raw token/getText() text rather than typed Python values,
     /// also matching those two.
     value: []const u8,
+};
+
+/// A parsed `[min..max]` / `[min..*]` / `[n]` cardinality literal.
+/// `max = null` means unbounded (`*`).
+pub const CardinalityRange = struct { min: u32, max: ?u32 };
+
+/// One `[min..max]` group, captured as a side-channel alongside the
+/// group's members being recorded as plain optional children (unchanged
+/// from before -- see the doc comment on `Builder` below). Only consumed
+/// by `--conversion`/`conversion=True`; parsed unconditionally since
+/// walking the member list costs nothing extra here.
+pub const CardinalityGroup = struct {
+    parent: []const u8,
+    members: std.ArrayList([]const u8) = .empty,
+    range: CardinalityRange,
+};
+
+/// One feature-local `constraint <expr>` / one item of `constraints
+/// [<expr>, ...]`, actually parsed into a constraint AST (unlike the
+/// group members above, there's no other representation for these to
+/// piggyback on -- they were previously skipped byte-for-byte). Only
+/// merged into the CNF's constraint set by `--conversion`/
+/// `conversion=True`; always populated at parse time regardless, same
+/// as `cardinality_groups`.
+pub const FeatureLocalConstraint = struct {
+    feature: []const u8,
+    node: ?*constraint.Node,
+    full: *constraint.Node,
+    text: []const u8,
+    text_line: u32,
+    saw_dot: bool,
+    saw_comparison: bool,
+    saw_bool_op: bool,
 };
 
 pub const HInfo = struct {
@@ -69,6 +103,13 @@ pub const Builder = struct {
     cardinality_feature_count: usize = 0,
     typed_feature_count: usize = 0,
     attributed_feature_count: usize = 0,
+
+    /// Side-channels for `--conversion`/`conversion=True` (see
+    /// `CardinalityGroup`/`FeatureLocalConstraint` above) -- always
+    /// populated at parse time; only acted on when conversion is
+    /// requested at CNF-generation time.
+    cardinality_groups: std.ArrayList(CardinalityGroup) = .empty,
+    feature_local_constraints: std.ArrayList(FeatureLocalConstraint) = .empty,
 
     pub fn init(alloc: Allocator) Builder {
         return .{

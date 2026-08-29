@@ -335,12 +335,32 @@ def test_zig_matches_lark_on_extraction(uvl_path):
     EXAMPLE_UVL_FILES,
     ids=[os.path.basename(p) for p in EXAMPLE_UVL_FILES],
 )
-def test_zig_to_smt_matches_antlr(uvl_path):
-    # Reference is ANTLR, not Lark, for the same reason as
-    # test_zig_matches_lark_on_extraction's feature_attributes check: Lark's
-    # earley-ambiguity attribute-drop bug would otherwise make this test
-    # fail on automotive01.uvl for a pre-existing Lark-only reason unrelated
-    # to zig.
+def test_zig_to_smt_agrees_with_antlr_on_satisfiability(uvl_path):
+    """backend="zig"'s to_smt() is a native writer (parser/src/smt.zig),
+    not the shared Python string-splicing implementation ANTLR/Lark still
+    use -- the two no longer produce comparable text (different variable
+    naming/quoting/sort-inference choices), so this checks the property
+    that actually matters instead: both encodings must agree on whether
+    the model is satisfiable at all, checked with z3 (see
+    tests/test_zig_smt.py for the native writer's own, more detailed
+    coverage). Both writers are held to the same hard requirement: their
+    output must always be valid, solvable SMT-LIB, no exceptions --
+    z3-incompatibilities previously found in the legacy writer (a
+    UVL-quoted feature name emitted with its literal quote characters; an
+    attribute unconditionally declared Int even when string-valued) have
+    been fixed for parity with the native one (see _smt_ident/
+    _smt_infer_sort in uvllang/main.py).
+    """
+    z3 = pytest.importorskip("z3")
     zig_model = UVL(from_file=uvl_path, backend="zig", drop_non_boolean=True)
     antlr_model = UVL(from_file=uvl_path, backend="antlr")
-    assert _nows(zig_model.to_smt()) == _nows(antlr_model.to_smt())
+
+    def check(smt_text):
+        solver = z3.Solver()
+        solver.from_string(smt_text)
+        return str(solver.check())
+
+    zig_result = check(zig_model.to_smt())
+    antlr_result = check(antlr_model.to_smt())
+    assert zig_result == "sat"
+    assert zig_result == antlr_result

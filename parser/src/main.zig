@@ -4,6 +4,7 @@ const parser = @import("parser.zig");
 const cnf = @import("cnf.zig");
 const constraint = @import("constraint.zig");
 const subsumption = @import("subsumption.zig");
+const conversion = @import("conversion.zig");
 
 fn usage() void {
     std.debug.print(
@@ -20,6 +21,14 @@ fn usage() void {
         \\full clause set (hierarchy + constraints) before writing it out,
         \\removing redundant/subsumed clauses at the cost of extra runtime
         \\on large models. Off by default.
+        \\
+        \\--conversion applies the UVLParser paper's (Sundermann et al.,
+        \\SPLC'23) conversion strategies instead of silently dropping two
+        \\above-Boolean constructs: group cardinality ([i..j] groups) is
+        \\encoded as enumerated Boolean clauses, and feature-local
+        \\`constraint`/`constraints` attributes are extracted as ordinary
+        \\constraints. Feature cardinality (clone multiplicity) is not yet
+        \\covered -- see docs/non_boolean_support.md. Off by default.
         \\
     , .{});
 }
@@ -44,6 +53,7 @@ pub fn main(init: std.process.Init) !u8 {
     var out_path: ?[]const u8 = null;
     var parse_only = false;
     var do_simplify = false;
+    var do_conversion = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -57,6 +67,8 @@ pub fn main(init: std.process.Init) !u8 {
             parse_only = true;
         } else if (std.mem.eql(u8, arg, "--simplify")) {
             do_simplify = true;
+        } else if (std.mem.eql(u8, arg, "--conversion")) {
+            do_conversion = true;
         } else if (in_path == null) {
             in_path = arg;
         } else if (out_path == null) {
@@ -106,6 +118,13 @@ pub fn main(init: std.process.Init) !u8 {
 
     try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
 
+    if (do_conversion) {
+        for (result.builder.cardinality_groups.items) |cg| {
+            try conversion.emitCardinalityGroupClauses(alloc, cg, &ids, &clauses);
+        }
+        try conversion.emitFeatureLocalConstraintClauses(alloc, result.builder.feature_local_constraints.items, &ids, &clauses);
+    }
+
     var attribute_ref_constraints: usize = 0;
     var comparison_constraints: usize = 0;
     for (result.constraints) |info| {
@@ -138,13 +157,21 @@ pub fn main(init: std.process.Init) !u8 {
 
     const b = &result.builder;
     if (b.cardinality_group_count > 0) {
-        std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF\n", .{b.cardinality_group_count});
+        if (do_conversion) {
+            std.debug.print("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
+        } else {
+            std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
+        }
     }
     if (b.constraint_attribute_count > 0) {
-        std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted\n", .{b.constraint_attribute_count});
+        if (do_conversion) {
+            std.debug.print("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
+        } else {
+            std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
+        }
     }
     if (b.cardinality_feature_count > 0) {
-        std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded\n", .{b.cardinality_feature_count});
+        std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded (not supported by --conversion yet)\n", .{b.cardinality_feature_count});
     }
     if (b.typed_feature_count > 0) {
         std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});

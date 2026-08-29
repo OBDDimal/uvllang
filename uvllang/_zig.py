@@ -87,6 +87,7 @@ def _load_lib():
         ctypes.c_char_p,
         ctypes.c_size_t,
         ctypes.c_uint8,
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(_CNonBooleanCounts),
@@ -113,6 +114,14 @@ def _load_lib():
 
     lib.uvl_parse_source_full.restype = ctypes.c_int32
     lib.uvl_parse_source_full.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+
+    lib.uvl_source_to_smt.restype = ctypes.c_int32
+    lib.uvl_source_to_smt.argtypes = [
         ctypes.c_char_p,
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_void_p),
@@ -173,7 +182,7 @@ def _take_dimacs_buffer(lib, out_ptr, out_len):
         lib.uvl_free_buffer(out_ptr, out_len)
 
 
-def parse_source_to_cnf(source: str, simplify: bool = False):
+def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = False):
     """Full pipeline: UVL source text -> (clauses, id_to_name, non_boolean).
 
     `non_boolean` is a dict of counts for constructs above the plain
@@ -187,6 +196,11 @@ def parse_source_to_cnf(source: str, simplify: bool = False):
     default, matching the `uvl2cnf` CLI's `--simplify` flag, so this API
     and the CLI produce the same clause set for the same input unless the
     caller explicitly opts in.
+
+    `conversion` gates the UVLParser-paper conversion strategies for group
+    cardinality and feature-local constraint attributes (see
+    parser/src/conversion.zig / docs/non_boolean_support.md) -- off by
+    default, matching the `uvl2cnf` CLI's `--conversion` flag.
     """
     lib = _get_lib()
     src_bytes = source.encode("utf-8")
@@ -197,6 +211,7 @@ def parse_source_to_cnf(source: str, simplify: bool = False):
         src_bytes,
         len(src_bytes),
         1 if simplify else 0,
+        1 if conversion else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
         ctypes.byref(non_boolean),
@@ -322,6 +337,28 @@ def parse_source_full(source: str) -> dict:
     finally:
         lib.uvl_free_buffer(out_ptr, out_len)
     return _decode_parse_source_full(data)
+
+
+def source_to_smt(source: str) -> str:
+    """Full pipeline: UVL source text -> SMT-LIB 2 text, via the native
+    writer (parser/src/smt.zig). Unlike parse_source_to_cnf, not
+    restricted to the plain Boolean language level -- numeric
+    comparisons, aggregates, and typed features are all represented.
+    Backs UVL.to_smt() for backend="zig"; the native uvl2smt binary calls
+    the same Zig code directly, without going through Python at all.
+    """
+    lib = _get_lib()
+    src_bytes = source.encode("utf-8")
+    out_ptr = ctypes.c_void_p()
+    out_len = ctypes.c_size_t()
+    rc = lib.uvl_source_to_smt(
+        src_bytes, len(src_bytes), ctypes.byref(out_ptr), ctypes.byref(out_len)
+    )
+    _check(lib, rc)
+    try:
+        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8")
+    finally:
+        lib.uvl_free_buffer(out_ptr, out_len)
 
 
 def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: bool = False):

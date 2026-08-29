@@ -19,7 +19,57 @@ pub const Node = union(enum) {
     or_: [2]*Node,
     implies: [2]*Node,
     equiv: [2]*Node,
+    /// A numeric/string comparison or a bare non-reference arithmetic atom
+    /// (e.g. `sum(Power)` alone, with no comparison operator) -- an atom
+    /// that isn't Boolean-encodable. `generateClauses` never sees one of
+    /// these in practice: `parseConstraint` nulls out `.node` (though not
+    /// `.full`, see `ConstraintParse`) whenever `saw_comparison` is set,
+    /// which is always set alongside every `.cmp` node this parser ever
+    /// produces.
+    cmp: *Cmp,
     invalid: void,
+};
+
+pub const CmpOp = enum { eq, lt, le, gt, ge, ne };
+
+pub const Cmp = struct {
+    op: CmpOp,
+    lhs: *ArithNode,
+    rhs: *ArithNode,
+};
+
+pub const AggFunc = enum { sum, avg, len, floor, ceil };
+
+/// `sum`/`avg`/`floor`/`ceil` accept either a bare attribute-name
+/// reference (`sum(Power)`, `scope = null`) or a feature-scoped one
+/// (`sum(SomeFeature, Power)`, aggregating only over `SomeFeature` and its
+/// descendants -- `scope = "SomeFeature"`), per the grammar's optional
+/// leading `(reference COMMA)?`. `len` is always the 1-arg form in
+/// practice (a string feature/attribute reference), but is parsed the
+/// same way -- the grammar doesn't distinguish arity by function name and
+/// neither does this parser.
+pub const Aggregate = struct {
+    func: AggFunc,
+    scope: ?[]const u8,
+    arg: []const u8,
+};
+
+/// Arithmetic-level expression tree. `num`/`str` keep the raw source text
+/// of the literal (matching `AttributeEntry.value`'s convention elsewhere
+/// in this codebase) rather than a typed/parsed value -- avoids float
+/// round-tripping issues and keeps quote style intact for `str`. `ref` is
+/// a feature or `feature.attribute` reference name (dotted iff it
+/// contains a literal `.`, since `parseReference` is the only producer of
+/// dotted names and always builds them by concatenating with `"."`).
+pub const ArithNode = union(enum) {
+    num: []const u8,
+    str: []const u8,
+    ref: []const u8,
+    add: [2]*ArithNode,
+    sub: [2]*ArithNode,
+    mul: [2]*ArithNode,
+    div: [2]*ArithNode,
+    aggregate: Aggregate,
 };
 
 fn makeLit(alloc: Allocator, name: []const u8) !*Node {
@@ -44,6 +94,33 @@ fn makeInvalid(alloc: Allocator) !*Node {
     const n = try alloc.create(Node);
     n.* = .invalid;
     return n;
+}
+
+fn makeCmp(alloc: Allocator, op: CmpOp, lhs: *ArithNode, rhs: *ArithNode) !*Node {
+    const cmp = try alloc.create(Cmp);
+    cmp.* = .{ .op = op, .lhs = lhs, .rhs = rhs };
+    const n = try alloc.create(Node);
+    n.* = .{ .cmp = cmp };
+    return n;
+}
+
+fn makeArithLeaf(alloc: Allocator, comptime tag: std.meta.Tag(ArithNode), text: []const u8) !*ArithNode {
+    const n = try alloc.create(ArithNode);
+    n.* = @unionInit(ArithNode, @tagName(tag), text);
+    return n;
+}
+
+fn makeArithBin(alloc: Allocator, comptime tag: std.meta.Tag(ArithNode), a: *ArithNode, b: *ArithNode) !*ArithNode {
+    const n = try alloc.create(ArithNode);
+    n.* = @unionInit(ArithNode, @tagName(tag), .{ a, b });
+    return n;
+}
+
+fn asBareRef(node: *ArithNode) ?[]const u8 {
+    return switch (node.*) {
+        .ref => |name| name,
+        else => null,
+    };
 }
 
 pub const ParseError = error{ UnexpectedToken, UnexpectedEnd } || Allocator.Error;
@@ -104,71 +181,101 @@ fn parseReference(c: *ParseCtx) !Ref {
     return .{ .name = try name.toOwnedSlice(c.alloc), .dotted = dotted };
 }
 
-fn parseAggregateArgs(c: *ParseCtx) !void {
-    try c.expect(.lparen);
-    _ = try parseReference(c);
-    if (c.check(.comma)) {
-        _ = c.advance();
-        _ = try parseReference(c);
-    }
-    try c.expect(.rparen);
+fn aggFuncFor(k: Kind) AggFunc {
+    return switch (k) {
+        .sum_key => .sum,
+        .avg_key => .avg,
+        .len_key => .len,
+        .floor_key => .floor,
+        .ceil_key => .ceil,
+        else => unreachable,
+    };
 }
 
-/// Parses one comp_primary. Sets `complex` whenever the atom isn't a bare
-/// reference (float/int/string/aggregate call/parenthesized sub-expr), and
-/// fills `single` with the reference when it is one.
-fn parseCompPrimary(c: *ParseCtx, complex: *bool, single: *?Ref) ParseError!void {
+fn cmpOpFor(k: Kind) CmpOp {
+    return switch (k) {
+        .eq => .eq,
+        .lt => .lt,
+        .le => .le,
+        .gt => .gt,
+        .ge => .ge,
+        .ne => .ne,
+        else => unreachable,
+    };
+}
+
+/// `AGG_KEY LPAREN reference (COMMA reference)? RPAREN` -- see
+/// `Aggregate`'s doc comment for the one-vs-two-arg meaning.
+fn parseAggregateArgs(c: *ParseCtx, func: AggFunc) ParseError!*ArithNode {
+    try c.expect(.lparen);
+    const first = try parseReference(c);
+    var scope: ?[]const u8 = null;
+    var arg = first.name;
+    if (c.check(.comma)) {
+        _ = c.advance();
+        const second = try parseReference(c);
+        scope = first.name;
+        arg = second.name;
+    }
+    try c.expect(.rparen);
+    const n = try c.alloc.create(ArithNode);
+    n.* = .{ .aggregate = .{ .func = func, .scope = scope, .arg = arg } };
+    return n;
+}
+
+/// Parses one comp_primary into a real arithmetic-expression node: a
+/// numeric/string literal, an aggregate call, a parenthesized
+/// sub-expression, or a bare feature/attribute reference.
+fn parseCompPrimary(c: *ParseCtx) ParseError!*ArithNode {
     switch (c.cur().kind) {
-        .float, .integer, .string_lit => {
-            _ = c.advance();
-            complex.* = true;
-            single.* = null;
-        },
+        .float => return makeArithLeaf(c.alloc, .num, c.advance().text),
+        .integer => return makeArithLeaf(c.alloc, .num, c.advance().text),
+        .string_lit => return makeArithLeaf(c.alloc, .str, c.advance().text),
         .sum_key, .avg_key, .len_key, .floor_key, .ceil_key => {
+            const func = aggFuncFor(c.cur().kind);
             _ = c.advance();
-            try parseAggregateArgs(c);
-            complex.* = true;
-            single.* = null;
+            return parseAggregateArgs(c, func);
         },
         .lparen => {
             _ = c.advance();
-            var inner_complex = false;
-            var inner_single: ?Ref = null;
-            try parseCompExpr(c, &inner_complex, &inner_single);
+            const inner = try parseCompExpr(c);
             try c.expect(.rparen);
-            complex.* = true; // parenthesized, never a bare literal
-            single.* = null;
+            return inner;
         },
         else => {
             if (!isReferenceStart(c.cur().kind)) return ParseError.UnexpectedToken;
             const r = try parseReference(c);
-            single.* = r;
+            return makeArithLeaf(c.alloc, .ref, r.name);
         },
     }
 }
 
-fn parseCompMultiplicative(c: *ParseCtx, complex: *bool, single: *?Ref) ParseError!void {
-    try parseCompPrimary(c, complex, single);
+fn parseCompMultiplicative(c: *ParseCtx) ParseError!*ArithNode {
+    var left = try parseCompPrimary(c);
     while (c.check(.mul) or c.check(.div)) {
+        const is_mul = c.check(.mul);
         _ = c.advance();
-        var rc = false;
-        var rs: ?Ref = null;
-        try parseCompPrimary(c, &rc, &rs);
-        complex.* = true;
-        single.* = null;
+        const right = try parseCompPrimary(c);
+        left = if (is_mul)
+            try makeArithBin(c.alloc, .mul, left, right)
+        else
+            try makeArithBin(c.alloc, .div, left, right);
     }
+    return left;
 }
 
-fn parseCompExpr(c: *ParseCtx, complex: *bool, single: *?Ref) ParseError!void {
-    try parseCompMultiplicative(c, complex, single);
+fn parseCompExpr(c: *ParseCtx) ParseError!*ArithNode {
+    var left = try parseCompMultiplicative(c);
     while (c.check(.add) or c.check(.sub)) {
+        const is_add = c.check(.add);
         _ = c.advance();
-        var rc = false;
-        var rs: ?Ref = null;
-        try parseCompMultiplicative(c, &rc, &rs);
-        complex.* = true;
-        single.* = null;
+        const right = try parseCompMultiplicative(c);
+        left = if (is_add)
+            try makeArithBin(c.alloc, .add, left, right)
+        else
+            try makeArithBin(c.alloc, .sub, left, right);
     }
+    return left;
 }
 
 fn parseAtom(c: *ParseCtx) ParseError!*Node {
@@ -179,26 +286,24 @@ fn parseAtom(c: *ParseCtx) ParseError!*Node {
         return inner;
     }
 
-    var complex = false;
-    var single: ?Ref = null;
-    try parseCompExpr(c, &complex, &single);
+    const left = try parseCompExpr(c);
 
     if (isComparisonOp(c.cur().kind)) {
-        _ = c.advance();
-        var rc = false;
-        var rs: ?Ref = null;
-        try parseCompExpr(c, &rc, &rs);
+        const op = cmpOpFor(c.advance().kind);
+        const right = try parseCompExpr(c);
         c.saw_comparison = true;
-        return makeInvalid(c.alloc);
+        return makeCmp(c.alloc, op, left, right);
     }
 
-    if (complex or single == null) {
-        c.saw_comparison = true;
-        return makeInvalid(c.alloc);
+    if (asBareRef(left)) |name| {
+        if (std.mem.indexOfScalar(u8, name, '.') != null) c.saw_dot = true;
+        return makeLit(c.alloc, name);
     }
 
-    if (single.?.dotted) c.saw_dot = true;
-    return makeLit(c.alloc, single.?.name);
+    // A bare arithmetic atom with no comparison at all (e.g. `sum(Power)`
+    // alone as a "constraint") isn't Boolean-encodable either.
+    c.saw_comparison = true;
+    return makeInvalid(c.alloc);
 }
 
 fn parseNot(c: *ParseCtx) ParseError!*Node {
@@ -253,7 +358,17 @@ fn parseEquivalence(c: *ParseCtx) ParseError!*Node {
 }
 
 pub const ConstraintParse = struct {
+    /// CNF-usable tree: null whenever the constraint should be dropped
+    /// from the CNF -- either it touches an attribute reference (a dotted
+    /// literal) or a numeric comparison, matching the classification
+    /// uvllang/main.py's `_constraints_to_cnf` does on the reconstructed
+    /// constraint text.
     node: ?*Node,
+    /// The complete tree regardless of `node`/`skip` -- includes `.cmp`
+    /// and arithmetic sub-trees a CNF-only consumer can't use. Always
+    /// non-null; used by the SMT writer/reader (parser/src/smt.zig,
+    /// parser/src/smtlib.zig), which have no such restriction.
+    full: *Node,
     saw_dot: bool,
     saw_comparison: bool,
     saw_bool_op: bool,
@@ -263,17 +378,14 @@ pub const ConstraintParse = struct {
 /// Parses one constraint expression starting at `tokens[start]`, stopping
 /// as soon as the grammar cascade bottoms out (a NEWLINE token never
 /// matches any continuation, so it's fine to hand this the rest of the
-/// token stream rather than a pre-sliced line). `node` is null whenever the
-/// constraint should be dropped from the CNF -- either it touches an
-/// attribute reference (a dotted literal) or a numeric comparison, matching
-/// the classification uvllang/main.py's `_constraints_to_cnf` does on the
-/// reconstructed constraint text.
+/// token stream rather than a pre-sliced line).
 pub fn parseConstraint(alloc: Allocator, tokens: []const Token, start: usize) ParseError!ConstraintParse {
     var c = ParseCtx{ .alloc = alloc, .tokens = tokens, .pos = start };
     const node = try parseEquivalence(&c);
     const skip = c.saw_dot or c.saw_comparison;
     return .{
         .node = if (skip) null else node,
+        .full = node,
         .saw_dot = c.saw_dot,
         .saw_comparison = c.saw_comparison,
         .saw_bool_op = c.saw_bool_op,
@@ -308,7 +420,7 @@ fn nnf(alloc: Allocator, n: *Node, negate: bool) ClauseError!*Node {
             var both = Node{ .and_ = .{ &imp1, &imp2 } };
             return nnf(alloc, &both, negate);
         },
-        .invalid => return ClauseError.UnknownFeature,
+        .cmp, .invalid => return ClauseError.UnknownFeature,
     }
 }
 
@@ -612,7 +724,7 @@ fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *N
             }
             return kept.toOwnedSlice(alloc);
         },
-        .invalid => return ClauseError.UnknownFeature,
+        .cmp, .invalid => return ClauseError.UnknownFeature,
         .implies, .equiv => unreachable, // n is already NNF'd
     }
 }
@@ -680,6 +792,117 @@ test "comparison is skipped" {
     const parsed = try parseConstraint(alloc, &toks, 0);
     try std.testing.expect(parsed.node == null);
     try std.testing.expect(parsed.saw_comparison);
+    // Phase 2: `.full` is still built even though `.node` is nulled.
+    try std.testing.expect(parsed.full.* == .cmp);
+    try std.testing.expectEqual(CmpOp.gt, parsed.full.cmp.op);
+    try std.testing.expect(parsed.full.cmp.lhs.* == .ref);
+    try std.testing.expectEqualStrings("A", parsed.full.cmp.lhs.ref);
+    try std.testing.expect(parsed.full.cmp.rhs.* == .num);
+    try std.testing.expectEqualStrings("3", parsed.full.cmp.rhs.num);
+}
+
+const lexer = @import("lexer.zig");
+
+fn parseText(alloc: Allocator, text: []const u8) !ConstraintParse {
+    const toks = try lexer.tokenize(alloc, text);
+    return parseConstraint(alloc, toks, 0);
+}
+
+test "arithmetic ops build a nested left-associative tree" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // A + B * 2 > 3  ==  A + (B * 2) > 3 (mul binds tighter than add)
+    const parsed = try parseText(alloc, "A + B * 2 > 3");
+    try std.testing.expect(parsed.node == null);
+    try std.testing.expect(parsed.full.* == .cmp);
+    const lhs = parsed.full.cmp.lhs;
+    try std.testing.expect(lhs.* == .add);
+    try std.testing.expect(lhs.add[0].* == .ref);
+    try std.testing.expectEqualStrings("A", lhs.add[0].ref);
+    try std.testing.expect(lhs.add[1].* == .mul);
+    try std.testing.expectEqualStrings("B", lhs.add[1].mul[0].ref);
+    try std.testing.expectEqualStrings("2", lhs.add[1].mul[1].num);
+}
+
+test "2-arg aggregate call captures scope and attribute separately" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseText(alloc, "sum(SomeFeature, Power) > 120");
+    try std.testing.expect(parsed.full.* == .cmp);
+    const lhs = parsed.full.cmp.lhs;
+    try std.testing.expect(lhs.* == .aggregate);
+    try std.testing.expectEqual(AggFunc.sum, lhs.aggregate.func);
+    try std.testing.expectEqualStrings("SomeFeature", lhs.aggregate.scope.?);
+    try std.testing.expectEqualStrings("Power", lhs.aggregate.arg);
+}
+
+test "1-arg aggregate call has no scope" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseText(alloc, "avg(Power) > 3");
+    const lhs = parsed.full.cmp.lhs;
+    try std.testing.expect(lhs.* == .aggregate);
+    try std.testing.expectEqual(AggFunc.avg, lhs.aggregate.func);
+    try std.testing.expect(lhs.aggregate.scope == null);
+    try std.testing.expectEqualStrings("Power", lhs.aggregate.arg);
+}
+
+test "floor and ceil aggregates parse" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const floor_parsed = try parseText(alloc, "floor(Price) > 3");
+    try std.testing.expectEqual(AggFunc.floor, floor_parsed.full.cmp.lhs.aggregate.func);
+
+    const ceil_parsed = try parseText(alloc, "ceil(Price) > 3");
+    try std.testing.expectEqual(AggFunc.ceil, ceil_parsed.full.cmp.lhs.aggregate.func);
+}
+
+test "len aggregate and string literal comparison" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseText(alloc, "len(Name) == 3");
+    try std.testing.expectEqual(CmpOp.eq, parsed.full.cmp.op);
+    try std.testing.expectEqual(AggFunc.len, parsed.full.cmp.lhs.aggregate.func);
+
+    const str_parsed = try parseText(alloc, "Name == 'Fun'");
+    try std.testing.expect(str_parsed.full.cmp.rhs.* == .str);
+    try std.testing.expectEqualStrings("'Fun'", str_parsed.full.cmp.rhs.str);
+}
+
+test "a bare arithmetic atom with no comparison is still not boolean-encodable" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseText(alloc, "sum(Power)");
+    try std.testing.expect(parsed.node == null);
+    try std.testing.expect(parsed.saw_comparison);
+    // The arithmetic sub-tree itself isn't retained outside a comparison
+    // (there's nothing to compare it to), so `.full` degrades to
+    // `.invalid` here, same as `.node` -- this shape is not a valid
+    // constraint under any interpretation, boolean or otherwise.
+    try std.testing.expect(parsed.full.* == .invalid);
+}
+
+test "a plain boolean constraint still produces a matching .full and .node" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseText(alloc, "A => B");
+    try std.testing.expect(parsed.node != null);
+    try std.testing.expect(parsed.node.? == parsed.full);
+    try std.testing.expect(parsed.full.* == .implies);
 }
 
 test "IndexedKept: subsumption still correct once past the linear-scan threshold" {

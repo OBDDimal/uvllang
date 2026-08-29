@@ -220,6 +220,60 @@ class TestSMTExamples:
 
 
 @pytest.mark.parametrize("use_antlr", [False, True])
+class TestSMTQuotingAndSortInference:
+    """Regression tests for two bugs found (via z3) in the shared
+    Lark/ANTLR to_smt() implementation and fixed for parity with the
+    native zig writer (parser/src/smt.zig) -- see uvllang/main.py's
+    _smt_ident/_smt_infer_sort. Both bugs made real example models
+    (berkeleydb.uvl, comments.uvl, automotive01.uvl) produce SMT-LIB that
+    z3 rejected outright; see tests/test_zig_parser.py's
+    test_zig_to_smt_agrees_with_antlr_on_satisfiability."""
+
+    def test_quoted_feature_name_is_a_valid_smt_symbol(self, use_antlr):
+        z3 = pytest.importorskip("z3")
+        uvl_content = 'features\n    "My Root"\n        optional\n            A\n'
+        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        smt = model.to_smt()
+
+        assert '"My Root"' not in smt
+        assert "|My Root|" in smt
+        solver = z3.Solver()
+        solver.from_string(smt)
+        assert str(solver.check()) == "sat"
+
+    def test_quoted_name_used_in_a_boolean_constraint(self, use_antlr):
+        """The specific pattern that broke comments.uvl: a quoted name
+        used as a constraint operand, not just in a declaration."""
+        z3 = pytest.importorskip("z3")
+        uvl_content = (
+            "features\n"
+            "    Root\n"
+            "        optional\n"
+            '            "weird//name"\n'
+            "            C\n"
+            "\n"
+            "constraints\n"
+            '    "weird//name" => C\n'
+        )
+        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        smt = model.to_smt()
+        solver = z3.Solver()
+        solver.from_string(smt)
+        assert str(solver.check()) == "sat"
+
+    def test_string_valued_attribute_declared_as_string_sort(self, use_antlr):
+        z3 = pytest.importorskip("z3")
+        uvl_content = "features\n    Root {tag 'v1'}\n        optional\n            A\n"
+        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        smt = model.to_smt()
+
+        assert "(declare-const Root.tag String)" in smt
+        solver = z3.Solver()
+        solver.from_string(smt)
+        assert str(solver.check()) == "sat"
+
+
+@pytest.mark.parametrize("use_antlr", [False, True])
 class TestSMTConversion:
     """Test SMT conversion with inline UVL definitions."""
 
@@ -302,41 +356,8 @@ constraints
             os.unlink(temp_file)
 
 
-class TestCLISMT:
-    """Test the uvl2smt CLI tool."""
-
-    def test_cli_smt_basic(self):
-        """Test basic CLI functionality for SMT conversion."""
-        from uvllang.cli import uvl2smt
-        import sys
-
-        example_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "expressions.uvl"
-        )
-
-        with tempfile.NamedTemporaryFile(suffix=".smt2", delete=False) as f:
-            output_file = f.name
-
-        try:
-            # Simulate CLI call
-            old_argv = sys.argv
-            sys.argv = ["uvl2smt", example_file, output_file]
-
-            try:
-                uvl2smt()
-            except SystemExit:
-                pass
-
-            # Check output file was created
-            assert os.path.exists(output_file)
-
-            with open(output_file, "r") as f:
-                content = f.read()
-
-            assert "(check-sat)" in content
-            assert "(declare-const A Bool)" in content
-
-        finally:
-            sys.argv = old_argv
-            if os.path.exists(output_file):
-                os.unlink(output_file)
+# The uvl2smt CLI is now a native Zig binary (parser/zig-out/bin/uvl2smt),
+# not this uvllang.cli.uvl2smt Python entry point (removed -- see
+# uvllang/cli.py's module docstring). See tests/test_zig_smt.py for its
+# coverage; the legacy Lark/ANTLR-backed to_smt() tested elsewhere in this
+# file is still exercised via the Python API directly.

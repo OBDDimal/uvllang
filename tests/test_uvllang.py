@@ -662,3 +662,97 @@ constraints
         assert len(model.to_cnf().clauses) == 10311
 
 
+class TestConversion:
+    """conversion=True (backend="zig" only) applies the UVLParser paper's
+    conversion strategies for group cardinality and feature-local
+    constraint attributes instead of dropping them -- see
+    parser/src/conversion.zig / docs/non_boolean_support.md."""
+
+    def test_conversion_requires_zig_backend(self):
+        with pytest.raises(ValueError):
+            UVL(
+                from_str=TestNonBooleanConstructs.GROUP_CARDINALITY,
+                backend="lark",
+                conversion=True,
+            )
+
+    def test_group_cardinality_no_longer_raises_under_conversion(self):
+        model = UVL(
+            from_str=TestNonBooleanConstructs.GROUP_CARDINALITY,
+            backend="zig",
+            conversion=True,
+        )
+        cnf = model.to_cnf()
+        assert cnf.clauses is not None
+
+    def test_constraint_attribute_no_longer_raises_under_conversion(self):
+        model = UVL(
+            from_str=TestNonBooleanConstructs.CONSTRAINT_ATTRIBUTE,
+            backend="zig",
+            conversion=True,
+        )
+        cnf = model.to_cnf()
+        assert cnf.clauses is not None
+
+    def test_group_cardinality_encoding_matches_bound(self):
+        """[2..3] over {FeatureA,FeatureB,FeatureC,FeatureD}: every
+        satisfying assignment must select between 2 and 3 of the four."""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "group-cardinality.uvl"
+        )
+        model = UVL(from_file=example_file, backend="zig", conversion=True)
+        ids = {f: i + 1 for i, f in enumerate(sorted(model.features))}
+        cnf = model.to_cnf(ids)
+        members = [ids["FeatureA"], ids["FeatureB"], ids["FeatureC"], ids["FeatureD"]]
+
+        from pysat.solvers import Glucose3
+
+        with Glucose3(bootstrap_with=cnf.clauses) as solver:
+            for bits in range(16):
+                assumptions = [
+                    m if (bits >> i) & 1 else -m for i, m in enumerate(members)
+                ]
+                sat = solver.solve(assumptions=assumptions)
+                n_selected = bin(bits).count("1")
+                assert sat == (2 <= n_selected <= 3), (bits, n_selected, sat)
+
+    def test_feature_local_constraint_extraction_matches_top_level(self):
+        """A feature-local `constraint A => B` under conversion=True must
+        produce the exact same clause as writing `A => B` as a top-level
+        constraint."""
+        top_level = """\
+features
+    Root
+        optional
+            A
+            B
+
+constraints
+    A => B
+"""
+        local = """\
+features
+    Root {constraint A => B}
+        optional
+            A
+            B
+"""
+        m1 = UVL(from_str=top_level, backend="zig")
+        m2 = UVL(from_str=local, backend="zig", conversion=True)
+        ids = {f: i + 1 for i, f in enumerate(sorted(m1.features))}
+        c1 = {tuple(sorted(c)) for c in m1.to_cnf(ids).clauses}
+        c2 = {tuple(sorted(c)) for c in m2.to_cnf(ids).clauses}
+        assert c1 == c2
+
+    def test_feature_cardinality_still_raises_under_conversion(self):
+        """Feature cardinality is explicitly deferred future work -- see
+        docs/non_boolean_support.md -- and must keep raising even with
+        conversion=True."""
+        example_file = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "feature-cardinality.uvl"
+        )
+        model = UVL(from_file=example_file, backend="zig", conversion=True)
+        with pytest.raises(NonBooleanConstructError):
+            model.to_cnf()
+
+

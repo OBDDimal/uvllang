@@ -1401,8 +1401,31 @@ pub const RecoverError = error{NoRoot} || Allocator.Error;
 /// Level 2 propagation-based implication recovery (see the section doc
 /// comment above `augmentGraphWithPropagation`); off by default.
 pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u8, optimize: bool, by_name: bool, infer_propagation: bool) ![]const u8 {
+    const parsed = try parseDimacs(scratch_alloc, dimacs);
+    return recoverFromParsed(scratch_alloc, out_alloc, parsed, optimize, by_name, infer_propagation, &.{});
+}
+
+/// Core of `recover()`, taking an already-parsed clause set instead of
+/// raw DIMACS text -- lets any front end that can produce a `ParsedDimacs`
+/// shape (feature ids/names + `[]const i32` clauses) reuse the entire
+/// hierarchy-recovery pipeline below unchanged. Used by `recover()` itself
+/// (DIMACS) and by `smtlib.recoverFromSmt` (SMT-LIB 2), which flattens the
+/// input's Boolean-only asserts into clauses the same way and passes
+/// anything it can't flatten (an Int/String/`ite`-involving assert) as
+/// `extra_constraints` -- raw UVL constraint-syntax text lines appended to
+/// the output verbatim, after the CNF-derived residual CTCs, the same
+/// "never silently drop it" policy `uvl2uvl` uses for content it can't
+/// judge.
+pub fn recoverFromParsed(
+    scratch_alloc: Allocator,
+    out_alloc: Allocator,
+    parsed: ParsedDimacs,
+    optimize: bool,
+    by_name: bool,
+    infer_propagation: bool,
+    extra_constraints: []const []const u8,
+) ![]const u8 {
     const alloc = scratch_alloc;
-    const parsed = try parseDimacs(alloc, dimacs);
     var graph = try buildGraph(alloc, parsed.clauses.items);
     if (infer_propagation) {
         var max_id: i32 = 0;
@@ -1481,6 +1504,17 @@ pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u
     const n_ctcs = try writeResidualCtcs(alloc, &aw.writer, ctc_clauses.items, &parsed.id_to_name);
     if (optimize) {
         std.debug.print("optimize_from_cnf: {d} CTCs remaining\n", .{n_ctcs});
+    }
+
+    if (extra_constraints.len > 0) {
+        // writeResidualCtcs only opens the "constraints" block itself
+        // when it has clauses of its own to write.
+        if (n_ctcs == 0) try aw.writer.writeAll("\n\nconstraints\n");
+        for (extra_constraints) |c| {
+            try aw.writer.writeAll("    ");
+            try aw.writer.writeAll(c);
+            try aw.writer.writeByte('\n');
+        }
     }
 
     return try aw.toOwnedSlice();

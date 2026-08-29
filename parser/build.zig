@@ -34,6 +34,26 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(uvl2uvl_exe);
 
+    const uvl2smt_exe = b.addExecutable(.{
+        .name = "uvl2smt",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/uvl2smt.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(uvl2smt_exe);
+
+    const any2uvl_exe = b.addExecutable(.{
+        .name = "any2uvl",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/any2uvl.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(any2uvl_exe);
+
     const lib = b.addLibrary(.{
         .name = "uvlparser",
         .linkage = .dynamic,
@@ -61,6 +81,11 @@ pub fn build(b: *std.Build) void {
         "src/recovery.zig",
         "src/subsumption.zig",
         "src/uvl2uvl.zig",
+        "src/conversion.zig",
+        "src/smt.zig",
+        "src/uvl2smt.zig",
+        "src/smtlib.zig",
+        "src/any2uvl.zig",
     };
     for (test_files) |file| {
         const t = b.addTest(.{

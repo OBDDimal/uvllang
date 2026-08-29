@@ -22,6 +22,8 @@ const cnf = @import("cnf.zig");
 const constraint = @import("constraint.zig");
 const subsumption = @import("subsumption.zig");
 const recovery = @import("recovery.zig");
+const conversion = @import("conversion.zig");
+const smt = @import("smt.zig");
 
 const gpa = std.heap.smp_allocator;
 
@@ -87,6 +89,7 @@ fn sourceToCnfImpl(
     alloc: Allocator,
     source: []const u8,
     do_simplify: bool,
+    do_conversion: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -102,6 +105,13 @@ fn sourceToCnfImpl(
         try clauses.append(alloc, clause);
     }
     try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
+
+    if (do_conversion) {
+        for (result.builder.cardinality_groups.items) |cg| {
+            try conversion.emitCardinalityGroupClauses(alloc, cg, &ids, &clauses);
+        }
+        try conversion.emitFeatureLocalConstraintClauses(alloc, result.builder.feature_local_constraints.items, &ids, &clauses);
+    }
 
     var attribute_ref_constraints: usize = 0;
     var comparison_constraints: usize = 0;
@@ -139,9 +149,21 @@ fn sourceToCnfImpl(
     }
 
     const b = &result.builder;
-    if (b.cardinality_group_count > 0) std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF\n", .{b.cardinality_group_count});
-    if (b.constraint_attribute_count > 0) std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted\n", .{b.constraint_attribute_count});
-    if (b.cardinality_feature_count > 0) std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded\n", .{b.cardinality_feature_count});
+    if (b.cardinality_group_count > 0) {
+        if (do_conversion) {
+            std.debug.print("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
+        } else {
+            std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
+        }
+    }
+    if (b.constraint_attribute_count > 0) {
+        if (do_conversion) {
+            std.debug.print("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
+        } else {
+            std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
+        }
+    }
+    if (b.cardinality_feature_count > 0) std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded (not supported by --conversion yet)\n", .{b.cardinality_feature_count});
     if (attribute_ref_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{attribute_ref_constraints});
     if (comparison_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{comparison_constraints});
     if (b.typed_feature_count > 0) std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
@@ -170,18 +192,55 @@ fn sourceToCnfImpl(
 /// and here, so the CLI and the Python API produce the same clause set for
 /// the same input unless the caller explicitly opts in. See
 /// docs/pipeline_clause_dedup.md.
+/// `do_conversion`: gates the UVLParser-paper conversion strategies for
+/// group cardinality and feature-local constraint attributes, matching
+/// the `uvl2cnf` CLI's `--conversion` flag -- off by default, so both
+/// stay silently dropped (as before) unless the caller opts in. See
+/// conversion.zig / docs/non_boolean_support.md.
 export fn uvl_source_to_cnf(
     src_ptr: [*]const u8,
     src_len: usize,
     do_simplify: u8,
+    do_conversion: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
-    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], do_simplify != 0, out_ptr, out_len, out_non_boolean) catch |err| {
+    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], do_simplify != 0, do_conversion != 0, out_ptr, out_len, out_non_boolean) catch |err| {
         setError("uvl_source_to_cnf: {t}", .{err});
+        return @intFromEnum(statusForError(err));
+    };
+    return @intFromEnum(StatusCode.ok);
+}
+
+fn sourceToSmtImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, out_len: *usize) !void {
+    const tokens = try lexer.tokenize(alloc, source);
+    const result = try parser.parseModel(alloc, tokens);
+
+    var aw = std.Io.Writer.Allocating.init(gpa);
+    defer aw.deinit();
+    try smt.writeSmt(alloc, &aw.writer, &result);
+    const owned = try aw.toOwnedSlice();
+    out_ptr.* = owned.ptr;
+    out_len.* = owned.len;
+}
+
+/// Full pipeline: raw UVL source -> SMT-LIB 2 text, backing the native
+/// `uvl2smt` binary and (for backend="zig") `UVL.to_smt()`. Unlike
+/// `uvl_source_to_cnf`, not restricted to the Boolean language level --
+/// see smt.zig.
+export fn uvl_source_to_smt(
+    src_ptr: [*]const u8,
+    src_len: usize,
+    out_ptr: *[*]const u8,
+    out_len: *usize,
+) callconv(.c) i32 {
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    sourceToSmtImpl(arena_state.allocator(), src_ptr[0..src_len], out_ptr, out_len) catch |err| {
+        setError("uvl_source_to_smt: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
     return @intFromEnum(StatusCode.ok);
