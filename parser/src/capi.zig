@@ -1,12 +1,18 @@
 //! C ABI surface for the shared library, called from Python via ctypes.
+//! This module should stay a thin marshalling layer -- decode C-ABI
+//! arguments, call into the same shared modules the native binaries use
+//! (pipeline.zig, recovery.zig, smt.zig), encode the result back out --
+//! not a second implementation of any of their logic.
 //!
 //! Three entry points:
 //!   - `uvl_source_to_cnf`: full pipeline (lex, parse, build hierarchy,
 //!     generate CNF) on raw UVL source text, writing DIMACS to an
-//!     in-memory buffer instead of a file.
+//!     in-memory buffer instead of a file. Shares its actual clause-
+//!     building and warning logic with the `uvl2cnf` CLI (main.zig) via
+//!     pipeline.zig.
 //!   - `uvl_hierarchy_to_cnf`: only the CNF-generation step, for callers
 //!     that already parsed the file themselves and supply the hierarchy
-//!     and constraints as flat arrays.
+//!     and constraints as flat arrays (Lark/ANTLR).
 //!   - `uvl_dimacs_to_uvl`: CNF -> UVL recovery (any2uvl).
 //!
 //! Each call runs in a scratch arena that's torn down before returning;
@@ -22,7 +28,7 @@ const cnf = @import("cnf.zig");
 const constraint = @import("constraint.zig");
 const subsumption = @import("subsumption.zig");
 const recovery = @import("recovery.zig");
-const conversion = @import("conversion.zig");
+const pipeline = @import("pipeline.zig");
 const smt = @import("smt.zig");
 
 const gpa = std.heap.smp_allocator;
@@ -96,46 +102,12 @@ fn sourceToCnfImpl(
 ) !void {
     const tokens = try lexer.tokenize(alloc, source);
     const result = try parser.parseModel(alloc, tokens);
-    var ids = try cnf.assignIds(alloc, &result.builder.features);
 
-    var clauses = std.ArrayList([]i32).empty;
-    if (result.builder.root) |root| {
-        const clause = try alloc.alloc(i32, 1);
-        clause[0] = ids.get(root).?;
-        try clauses.append(alloc, clause);
-    }
-    try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
+    const built = try pipeline.buildClauses(alloc, &result, do_conversion);
+    var ids = built.ids;
+    const clauses = built.clauses;
 
-    if (do_conversion) {
-        for (result.builder.cardinality_groups.items) |cg| {
-            try conversion.emitCardinalityGroupClauses(alloc, cg, &ids, &clauses);
-        }
-        try conversion.emitFeatureLocalConstraintClauses(alloc, result.builder.feature_local_constraints.items, &ids, &clauses);
-    }
-
-    var attribute_ref_constraints: usize = 0;
-    var comparison_constraints: usize = 0;
-    for (result.constraints) |info| {
-        if (info.node) |node| {
-            const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
-                error.UnknownFeature => {
-                    std.debug.print("Warning: could not convert constraint at line {d}: unknown feature reference\n", .{info.text_line});
-                    continue;
-                },
-                else => return err,
-            };
-            for (node_clauses) |c| try clauses.append(alloc, c);
-        } else if (info.saw_dot) {
-            std.debug.print("Info: Skipping constraint with attribute reference (line {d})\n", .{info.text_line});
-            attribute_ref_constraints += 1;
-        } else if (info.saw_comparison and info.saw_bool_op) {
-            std.debug.print("Info: Skipping constraint with arithmetic comparison (line {d})\n", .{info.text_line});
-            comparison_constraints += 1;
-        } else if (info.saw_comparison) {
-            std.debug.print("Info: Skipping constraint (line {d}): a bare comparison isn't Boolean-encodable\n", .{info.text_line});
-            comparison_constraints += 1;
-        }
-    }
+    pipeline.printNonBooleanWarnings(&result.builder, built.counts, do_conversion);
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;
@@ -149,32 +121,12 @@ fn sourceToCnfImpl(
     }
 
     const b = &result.builder;
-    if (b.cardinality_group_count > 0) {
-        if (do_conversion) {
-            std.debug.print("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
-        } else {
-            std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
-        }
-    }
-    if (b.constraint_attribute_count > 0) {
-        if (do_conversion) {
-            std.debug.print("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
-        } else {
-            std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
-        }
-    }
-    if (b.cardinality_feature_count > 0) std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded (not supported by --conversion yet)\n", .{b.cardinality_feature_count});
-    if (attribute_ref_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{attribute_ref_constraints});
-    if (comparison_constraints > 0) std.debug.print("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{comparison_constraints});
-    if (b.typed_feature_count > 0) std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
-    if (b.attributed_feature_count > 0) std.debug.print("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
-
     out_non_boolean.* = .{
         .cardinality_groups = b.cardinality_group_count,
         .constraint_attributes = b.constraint_attribute_count,
         .cardinality_features = b.cardinality_feature_count,
-        .attribute_ref_constraints = attribute_ref_constraints,
-        .comparison_constraints = comparison_constraints,
+        .attribute_ref_constraints = built.counts.attribute_ref_constraints,
+        .comparison_constraints = built.counts.comparison_constraints,
         .typed_features = b.typed_feature_count,
         .attributed_features = b.attributed_feature_count,
     };

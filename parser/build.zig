@@ -86,6 +86,7 @@ pub fn build(b: *std.Build) void {
         "src/uvl2smt.zig",
         "src/smtlib.zig",
         "src/any2uvl.zig",
+        "src/pipeline.zig",
     };
     for (test_files) |file| {
         const t = b.addTest(.{

@@ -2,9 +2,8 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
 const cnf = @import("cnf.zig");
-const constraint = @import("constraint.zig");
 const subsumption = @import("subsumption.zig");
-const conversion = @import("conversion.zig");
+const pipeline = @import("pipeline.zig");
 
 fn usage() void {
     std.debug.print(
@@ -106,79 +105,11 @@ pub fn main(init: std.process.Init) !u8 {
 
     if (parse_only) return 0;
 
-    var ids = try cnf.assignIds(alloc, &result.builder.features);
+    const built = try pipeline.buildClauses(alloc, &result, do_conversion);
+    var ids = built.ids;
+    const clauses = built.clauses;
 
-    var clauses = std.ArrayList([]i32).empty;
-
-    if (result.builder.root) |root| {
-        const clause = try alloc.alloc(i32, 1);
-        clause[0] = ids.get(root).?;
-        try clauses.append(alloc, clause);
-    }
-
-    try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
-
-    if (do_conversion) {
-        for (result.builder.cardinality_groups.items) |cg| {
-            try conversion.emitCardinalityGroupClauses(alloc, cg, &ids, &clauses);
-        }
-        try conversion.emitFeatureLocalConstraintClauses(alloc, result.builder.feature_local_constraints.items, &ids, &clauses);
-    }
-
-    var attribute_ref_constraints: usize = 0;
-    var comparison_constraints: usize = 0;
-    for (result.constraints) |info| {
-        if (info.node) |node| {
-            const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
-                error.UnknownFeature => {
-                    std.debug.print("Warning: could not convert constraint at line {d}: unknown feature reference\n", .{info.text_line});
-                    continue;
-                },
-                else => return err,
-            };
-            for (node_clauses) |c| try clauses.append(alloc, c);
-        } else if (info.saw_dot) {
-            std.debug.print("Info: Skipping constraint with attribute reference (line {d})\n", .{info.text_line});
-            attribute_ref_constraints += 1;
-        } else if (info.saw_comparison and info.saw_bool_op) {
-            std.debug.print("Info: Skipping constraint with arithmetic comparison (line {d})\n", .{info.text_line});
-            comparison_constraints += 1;
-        } else if (info.saw_comparison) {
-            std.debug.print("Info: Skipping constraint (line {d}): a bare comparison isn't Boolean-encodable\n", .{info.text_line});
-            comparison_constraints += 1;
-        }
-    }
-    if (attribute_ref_constraints > 0) {
-        std.debug.print("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{attribute_ref_constraints});
-    }
-    if (comparison_constraints > 0) {
-        std.debug.print("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{comparison_constraints});
-    }
-
-    const b = &result.builder;
-    if (b.cardinality_group_count > 0) {
-        if (do_conversion) {
-            std.debug.print("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
-        } else {
-            std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
-        }
-    }
-    if (b.constraint_attribute_count > 0) {
-        if (do_conversion) {
-            std.debug.print("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
-        } else {
-            std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
-        }
-    }
-    if (b.cardinality_feature_count > 0) {
-        std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded (not supported by --conversion yet)\n", .{b.cardinality_feature_count});
-    }
-    if (b.typed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
-    }
-    if (b.attributed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
-    }
+    pipeline.printNonBooleanWarnings(&result.builder, built.counts, do_conversion);
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;
