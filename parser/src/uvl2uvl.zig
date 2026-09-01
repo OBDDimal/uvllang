@@ -26,11 +26,11 @@ fn usage(t: term.Style) void {
     std.debug.print(
         \\
         \\A constraint is dropped only when it is entirely subsumed:
-        \\  Every clause it contributes to the underlying CNF is a superset of
-        \\  some other surviving clause, so this can only shrink the
-        \\  constraint list, never rewrite what's kept. Redundancy is checked
-        \\  via clause-level subsumption (the same equivalence-preserving pass
-        \\  as `uvl2cnf
+        \\Every clause it contributes to the underlying CNF is a superset of
+        \\some other surviving clause, so this can only shrink the
+        \\constraint list, never rewrite what's kept. Redundancy is checked
+        \\via clause-level subsumption (the same equivalence-preserving pass
+        \\as `uvl2cnf
     , .{});
     std.debug.print(" {s}", .{t.flag("--simplify")});
     std.debug.print(

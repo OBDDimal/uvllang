@@ -89,16 +89,6 @@ pub const BuildResult = struct {
     counts: ConstraintCounts,
 };
 
-/// Assigns ids, then emits, in order: the root unit clause, the
-/// hierarchy's own clauses, the `--conversion`/`conversion=True` clauses
-/// when `do_conversion` (group cardinality, feature-local constraint
-/// attributes -- see conversion.zig), and every Boolean-encodable
-/// top-level constraint's clauses. A constraint that isn't
-/// Boolean-encodable prints the same per-constraint warning either
-/// caller already printed and is tallied into the returned `counts`
-/// instead of being silently skipped. Never simplifies -- a caller that
-/// wants `--simplify` runs `subsumption.simplify` over the returned
-/// clauses itself, since that decision is orthogonal to everything here.
 /// Prints one "Info: Skipping line N: '<constraint text>' (LL: <level>)"
 /// line for a constraint above the plain Boolean language level, with the
 /// constraint's own source text (trimmed) shown for identification rather
@@ -109,6 +99,16 @@ fn printSkippedConstraint(line: u32, text: []const u8, level: []const u8) void {
     dbgPrint("Info: Skipping line {d}: '{s}' (LL: {s})\n", .{ line, trimmed, level });
 }
 
+/// Assigns ids, then emits, in order: the root unit clause, the
+/// hierarchy's own clauses, the `--conversion`/`conversion=True` clauses
+/// when `do_conversion` (group cardinality, feature-local constraint
+/// attributes -- see conversion.zig), and every Boolean-encodable
+/// top-level constraint's clauses. A constraint that isn't
+/// Boolean-encodable prints a per-constraint warning and is tallied into
+/// the returned `counts` instead of being silently skipped. Never
+/// simplifies -- a caller that wants `--simplify` runs
+/// `subsumption.simplify` over the returned clauses itself, since that
+/// decision is orthogonal to everything here.
 pub fn buildClauses(alloc: Allocator, result: *const parser.ParseResult, do_conversion: bool) !BuildResult {
     var ids = try cnf.assignIds(alloc, &result.builder.features);
 

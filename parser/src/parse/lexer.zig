@@ -18,10 +18,10 @@ fn isAlphaAscii(c: u8) bool {
 }
 
 // Approximates the ID_STRICT continuation charset (ASCII letters/digits/_
-// plus a handful of punctuation, plus the handful of accented Latin-1
-// letters and section-sign the grammar allows). Any non-ASCII byte is
-// accepted as a continuation byte, which is a safe superset for real UVL
-// model files (all identifiers we need to round-trip are ASCII).
+// plus a handful of punctuation, plus the accented Latin-1 letters and
+// section-sign the grammar allows). Any non-ASCII byte is accepted as a
+// continuation byte too, a safe superset for real UVL model files (their
+// identifiers are ASCII).
 fn isIdContinue(c: u8) bool {
     return isAlphaAscii(c) or isDigit(c) or switch (c) {
         '_', '#', '%', '?', '\\', '\'', ';' => true,

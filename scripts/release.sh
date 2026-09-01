@@ -78,6 +78,15 @@ fi
 if [ "$skip_pyodide" = 0 ]; then
     echo "==> Pyodide/wasm32 wheel (pyodide build)"
     pyodide build
+
+    # `pyodide build` runs `zig build -Dpyodide=true` directly in parser/,
+    # which overwrites parser/zig-out/lib/libuvlparser.so with the wasm
+    # build. Rebuild the native one so a dev checkout's own `import
+    # uvllang` (which looks in parser/zig-out/lib first -- see
+    # uvllang/_zig.py) isn't left pointed at a wasm .so after this script
+    # finishes.
+    echo "==> restoring native libuvlparser.so (parser/zig-out/lib)"
+    (cd parser && zig build)
 fi
 
 echo "==> twine check"

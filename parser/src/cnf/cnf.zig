@@ -26,13 +26,13 @@ pub fn assignIds(alloc: Allocator, features: *const std.StringHashMap(void)) !st
     return ids;
 }
 
-/// Direct port of UVL._hierarchy_to_cnf: a mandatory/optional child
+/// Converts a feature hierarchy to CNF: a mandatory/optional child
 /// contributes a child->parent implication (plus parent->child for
 /// mandatory), and an or/xor group contributes the parent-implies-any-member
 /// clause (plus the pairwise exclusions for xor). mandatory_children /
 /// optional_children group entries are recorded by the builder but never
-/// reach a clause here -- their constraint is already fully captured by the
-/// child edges above, exactly like the Python implementation.
+/// reach a clause here -- their constraint is already fully captured by
+/// the child edges above.
 pub fn hierarchyToCnf(
     alloc: Allocator,
     hierarchy: *const std.StringHashMap(HInfo),

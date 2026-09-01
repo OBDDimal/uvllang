@@ -47,8 +47,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# Generated DIMACS files
+# Generated DIMACS files, and any2uvl's default output naming
 *.dimacs
+*_recovered.uvl
 
 # Zig build artifacts
 zig-out/

@@ -372,7 +372,7 @@ pub const ParseResult = struct {
 
 /// includes: INCLUDE_KEY NEWLINE INDENT include_line* DEDENT
 /// include_line: language_level NEWLINE
-/// We don't need language-level semantics for CNF, just correct skipping.
+/// Language-level semantics don't matter for CNF, only correct skipping.
 fn parseIncludes(p: *P) ParseError!void {
     try p.expect(.include_key);
     try p.expect(.newline);
@@ -541,11 +541,12 @@ test "constraint attribute bodies are skipped, not extracted" {
     try std.testing.expectEqual(@as(usize, 0), result.constraints.len);
     try std.testing.expectEqual(@as(usize, 2), result.builder.constraint_attribute_count);
 
-    // Real extraction (Phase 1: uvl2cnf --conversion) happens regardless
-    // of the flag -- only *using* it for CNF generation is conditional.
-    // "constraint A => B" is one FeatureLocalConstraint; "constraints
-    // [A, B]" is two bare-literal ones (each just a reference, not a
-    // real boolean expression, so both parse to a plain `.lit` node).
+    // Extraction into feature_local_constraints happens unconditionally
+    // at parse time; only *using* it for CNF generation is gated by
+    // uvl2cnf --conversion. "constraint A => B" is one FeatureLocalConstraint;
+    // "constraints [A, B]" is two bare-literal ones (each just a
+    // reference, not a real boolean expression, so both parse to a plain
+    // `.lit` node).
     try std.testing.expectEqual(@as(usize, 3), result.builder.feature_local_constraints.items.len);
     const flc = result.builder.feature_local_constraints.items;
     try std.testing.expectEqualStrings("Root", flc[0].feature);

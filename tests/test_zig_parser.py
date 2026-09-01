@@ -28,11 +28,11 @@ def zig_parser():
     """Builds parser/ and returns the path to the uvl2cnf binary. Skips
     dependent tests if the zig toolchain isn't available.
 
-    Deliberately doesn't pass -Doptimize: this binary is also the one
-    symlinked onto PATH as the real `uvl2cnf` command (see
-    uvllang/cli.py's module docstring), so overriding its optimize mode
-    here would silently leave that command in whatever mode this fixture
-    last used, every time the test suite runs. `zig build`'s own default
+    Deliberately doesn't pass -Doptimize: this binary is also the one a
+    dev checkout symlinks onto PATH as the real `uvl2cnf` command (see
+    README.md#installation), so overriding its optimize mode here would
+    silently leave that command in whatever mode this fixture last used,
+    every time the test suite runs. `zig build`'s own default
     (ReleaseFast, set in build.zig) is what should ship either way.
     """
     if shutil.which("zig") is None:

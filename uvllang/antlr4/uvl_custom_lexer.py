@@ -20,16 +20,15 @@ class uvl_custom_lexer(uvl_python_lexer):
         self.tokens.append(t)
 
     def nextToken(self):
-        # Check if the end-of-file is ahead and there are still some DEDENTS expected.
+        # At EOF with unclosed indent levels: emit a closing NEWLINE, then
+        # a DEDENT per remaining indent level, before re-emitting EOF.
         if self._input.LA(1) == Token.EOF and len(self.indents) != 0:
-            # Remove any trailing EOF tokens from our buffer.
+            # Remove any trailing EOF tokens already buffered.
             while len(self.tokens) > 0 and self.tokens[-1].type == Token.EOF:
                 del self.tokens[-1]
 
-            # First emit an extra line break that serves as the end of the statement.
             self.emitToken(self.common_token(uvl_python_lexer.NEWLINE, "\n"))
 
-            # Now emit as much DEDENT tokens as needed.
             while len(self.indents) != 0:
                 self.emitToken(self.create_dedent())
                 del self.indents[-1]
@@ -81,37 +80,24 @@ class uvl_custom_lexer(uvl_python_lexer):
         )  # .replaceAll("[\r\n\f]+", "")
         next = self._input.LA(1)
 
-        # LA(1) returns an integer character code (or Token.EOF == -1), not
-        # a string -- comparing it against string literals like "\n" is
-        # always False in Python, silently disabling this entire skip
-        # condition (aside from the opened>0 check). That let every blank
-        # line be treated as a real zero-indentation line, triggering a
-        # full dedent-to-zero and discarding indent levels that were still
-        # valid ancestors for later, deeper content (confirmed on
-        # automotive02v4.uvl, where a blank line in the middle of deep
-        # nesting corrupted the indent stack and desynced the parser).
-        #
-        # The comment check itself was also wrong independently of that:
-        # `next == ord("#")` checks for a character this grammar's comment
-        # syntax (`//` and `/* */`, per uvl_lexer.g4) never uses -- '#' was
-        # never a valid UVL comment marker, so a genuine comment-only line
-        # was never actually caught here, only blank lines were. A comment
-        # is only recognizable by its first two characters.
+        # LA(1) returns an integer character code (Token.EOF == -1), not a
+        # string -- comparing it against string literals such as "\n"
+        # would always be False. A comment is only recognizable by its
+        # first two characters; this grammar has no comment syntax besides
+        # `//` and `/* */` (uvl_lexer.g4 -- not '#').
         is_comment_line = next == ord("/") and self._input.LA(2) in (
             ord("/"),
             ord("*"),
         )
         # The grammar's `namespace? NEWLINE? includes? NEWLINE? ...` has no
-        # NEWLINE slot before `namespace?` itself -- a leading blank line or
-        # comment only happens to work today when namespace is absent,
-        # because the leading newline gets absorbed by the NEWLINE? slot
-        # that follows namespace's empty match. When namespace (or any
-        # other first section) is actually present, that leading newline
-        # has nowhere to go and the parser rejects it outright. Since
-        # self.lastToken only tracks DEFAULT_CHANNEL tokens (comments never
-        # reach it), this is true until the first real content token has
-        # been seen, so it uniformly covers leading blank lines and leading
-        # comments of either style.
+        # NEWLINE slot before `namespace?` itself. A leading blank line or
+        # comment parses fine when namespace is absent, because the leading
+        # newline is absorbed by the NEWLINE? slot that follows namespace's
+        # empty match; when namespace (or any other first section) is
+        # present, that leading newline has nowhere to go and the parser
+        # rejects it. self.lastToken tracks only DEFAULT_CHANNEL tokens, so
+        # it stays None until the first real content token -- checking it
+        # below covers leading blank lines and leading comments uniformly.
         if (
             self.opened > 0
             or next == ord("\r")

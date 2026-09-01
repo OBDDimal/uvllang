@@ -1,5 +1,5 @@
-//! A minimal SMT-LIB 2 reader scoped to exactly the dialect `smt.zig`'s
-//! writer emits (`declare-const` of Bool/Int/Real/String,
+//! A minimal SMT-LIB 2 reader scoped to exactly the dialect smt/writer.zig
+//! emits (`declare-const` of Bool/Int/Real/String,
 //! `assert`/`and`/`or`/`not`/`=>`/`=`/`distinct`/`<`/`<=`/`>`/`>=`/
 //! `+`/`-`/`*`/`/`, `check-sat`/`get-model`) -- not general SMT-LIB 2. It
 //! backs `any2uvl`'s `.smt2` input support: a generic S-expression parser
@@ -143,8 +143,8 @@ fn toUvlName(alloc: Allocator, smt_ident: []const u8) ![]const u8 {
     return std.fmt.allocPrint(alloc, "\"{s}\"", .{raw});
 }
 
-/// Strips the `_val` suffix `smt.zig`'s writer appends to a typed
-/// feature's companion const, restoring the bare feature reference.
+/// Strips the `_val` suffix smt/writer.zig appends to a typed feature's
+/// companion const, restoring the bare feature reference.
 fn stripValSuffix(name: []const u8) []const u8 {
     const suffix = "_val";
     if (std.mem.endsWith(u8, name, suffix)) return name[0 .. name.len - suffix.len];
@@ -217,7 +217,7 @@ const UvlError = error{Unsupported} || Allocator.Error;
 const InfixOp = struct { smt: []const u8, uvl: []const u8 };
 
 /// SMT-LIB operator -> UVL infix text, for every n-ary operator the
-/// writer (smt.zig) ever produces outside an aggregate expansion. `not`
+/// writer (smt/writer.zig) ever produces outside an aggregate expansion. `not`
 /// and unary `-` are handled separately below (prefix, not infix).
 const infix_ops = [_]InfixOp{
     .{ .smt = "and", .uvl = " & " },

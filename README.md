@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="logo.svg" alt="uvllang logo" width="220" />
-</p>
+<img src="logo.svg" alt="uvllang" width="100%" />
 
 # uvllang
 

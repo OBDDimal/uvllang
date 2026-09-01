@@ -1,32 +1,26 @@
-//! Native SMT-LIB 2 writer (`uvl2smt`), replacing the string-splicing
-//! Python implementation (`uvllang/main.py`'s `to_smt()`) for the zig
-//! backend with real AST traversal over the constraint.zig `Node`/
-//! `ArithNode` tree built in Phase 2. Produces the same overall document
-//! shape: feature declarations, string-feature value declarations,
-//! attribute declarations/values, root assertion, hierarchy asserts,
-//! then boolean/arithmetic constraint asserts, `check-sat`/`get-model`.
+//! Native SMT-LIB 2 writer (`uvl2smt`), used by `UVL.to_smt()` on every
+//! backend. Walks the constraint.zig `Node`/`ArithNode` tree directly
+//! rather than string-splicing constraint text. Produces: feature
+//! declarations, string-feature value declarations, attribute
+//! declarations/values, root assertion, hierarchy asserts, then
+//! boolean/arithmetic constraint asserts, `check-sat`/`get-model`.
 //!
-//! Several gaps in the Python writer are fixed here since the real AST
-//! and z3-checked output make them straightforward to find and fix:
-//!   - the 2-arg scoped aggregate form (`sum(Feature, Attr)`, restricted
-//!     to `Feature` and its descendants) actually restricts the
-//!     aggregation now instead of being silently unhandled;
-//!   - `floor`/`ceil` are implemented (via `to_int`) instead of not being
-//!     recognized at all;
+//! Notable behavior:
+//!   - the 2-arg scoped aggregate form (`sum(Feature, Attr)`) restricts
+//!     the aggregation to `Feature` and its descendants;
+//!   - `floor`/`ceil` are implemented via `to_int`;
 //!   - typed non-Boolean features (`Integer`/`Real`, not just `String`)
 //!     get a `_val` companion const, so a comparison against a typed
 //!     feature (e.g. the paper's own `sum(Power) < Watt` example, `Watt`
-//!     an `Integer` feature) type-checks instead of comparing against the
-//!     feature's own `Bool` selection variable;
+//!     an `Integer` feature) type-checks against that value rather than
+//!     the feature's own `Bool` selection variable;
 //!   - a UVL-quoted feature/attribute name (`"My Feature"`) is rewritten
 //!     into a valid SMT-LIB symbol (bare if safe, `|...|`-quoted
-//!     otherwise) instead of being emitted with its literal quote
-//!     characters, which SMT-LIB's `<symbol>` grammar rejects;
-//!   - an attribute's declared SMT sort is inferred from its actual
-//!     value's shape (a quoted value -> `String`, a value containing `.`
-//!     -> `Real`, otherwise `Int`) instead of unconditionally `Int`,
-//!     which mismatched a string-valued attribute like `{tag 'v'}` against
-//!     the declared sort.
+//!     otherwise), since SMT-LIB's `<symbol>` grammar rejects literal
+//!     quote characters;
+//!   - an attribute's declared SMT sort is inferred from its value's
+//!     shape (a quoted value -> `String`, a value containing `.` ->
+//!     `Real`, otherwise `Int`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -48,9 +42,7 @@ fn isOptional(b: *const Builder, name: []const u8) bool {
             }
         }
     }
-    // Matches uvllang.main.UVL._is_feature_optional's implicit fallthrough
-    // (no matching child found -> Python's bare `return` at function end
-    // is `None`, falsy) -- practically unreachable for a well-formed tree.
+    // No matching child edge found -- unreachable for a well-formed tree.
     return false;
 }
 
@@ -193,8 +185,7 @@ fn descendantsOf(alloc: Allocator, b: *const Builder, root: []const u8, out: *st
 /// it's mandatory/root (always selected), or `(ite F F.attr 0)` if
 /// optional. Falls back to referencing every in-scope feature's
 /// (possibly-undeclared) attribute var directly if none of them actually
-/// declare the attribute -- matches the "undeclared attribute" fallback
-/// the Python writer used, kept for parity on this edge case.
+/// declare the attribute.
 fn writeAggregateSumOrAvg(alloc: Allocator, w: *std.Io.Writer, b: *const Builder, agg: constraint.Aggregate) !void {
     var scope_list = std.ArrayList([]const u8).empty;
     const scope_features: []const []const u8 = blk: {
@@ -428,12 +419,11 @@ pub fn writeSmt(alloc: Allocator, w: *std.Io.Writer, result: *const parser.Parse
         }
     }
 
-    // Attribute vars: every dotted reference any constraint actually
-    // uses, unioned with every feature-declared value attribute (whether
-    // referenced or not) -- matches the Python writer's coverage. Sort is
-    // inferred per attribute from the first declared value found for it;
-    // a constraint-only reference with no matching declared value falls
-    // back to Int.
+    // Attribute vars: every dotted reference any constraint uses, unioned
+    // with every feature-declared value attribute (whether referenced or
+    // not). Sort is inferred per attribute from the first declared value
+    // found for it; a constraint-only reference with no matching declared
+    // value falls back to Int.
     var attr_sorts = std.StringHashMap([]const u8).init(alloc);
     for (result.constraints) |c| {
         var referenced = std.StringHashMap(void).init(alloc);

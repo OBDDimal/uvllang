@@ -33,7 +33,7 @@ fn usage(t: term.Style) void {
 
 /// Rough verbose-only input stat for SMT-LIB: counts top-level forms by
 /// substring, not a real parse -- good enough for -v, not a source of
-/// truth (smt_reader.zig does the actual parsing).
+/// truth (smt/reader.zig does the actual parsing).
 fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
     var count: usize = 0;
     var i: usize = 0;
@@ -74,7 +74,7 @@ const Format = enum { dimacs, smtlib };
 /// file extension: DIMACS starts with a `c`/`p` header line or a bare
 /// literal, SMT-LIB 2 is s-expressions and so always starts with `(` --
 /// once any leading whitespace *and* `;`-prefixed comment lines (which
-/// smt.zig's writer always opens with) are skipped over.
+/// smt/writer.zig always opens its output with) are skipped over.
 fn sniffFormat(source: []const u8) Format {
     var i: usize = 0;
     while (i < source.len) {

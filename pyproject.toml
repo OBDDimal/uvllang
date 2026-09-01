@@ -20,6 +20,11 @@ dependencies = [
     "python-sat>=0.1.8.dev13",
 ]
 
+[project.urls]
+Homepage = "https://github.com/OBDDimal/uvllang"
+Repository = "https://github.com/OBDDimal/uvllang"
+Issues = "https://github.com/OBDDimal/uvllang/issues"
+
 [project.optional-dependencies]
 # "zig" is the default, always-available backend (uvllang._zig, the
 # compiled native binaries) and needs neither extra below. "lark" and
@@ -45,11 +50,7 @@ dev = [
 # native binaries at parser/zig-out/bin/{uvl2cnf,uvl2uvl,uvl2smt,any2uvl}
 # (built by `zig build` in parser/), installed onto PATH (e.g. into
 # .venv/bin/) via setup.py's scripts=, not generated as entry-point
-# wrapper scripts by setuptools -- see uvllang/cli.py's module docstring.
-# The legacy Lark/ANTLR-backed uvl2smt CLI this replaced is still
-# reachable programmatically via UVL(backend="lark"/"antlr").to_smt(), and
-# UVL.from_cnf(...) still wraps any2uvl's algorithm via ctypes for
-# programmatic use.
+# wrapper scripts by setuptools.
 
 [tool.setuptools.packages.find]
 where = ["."]

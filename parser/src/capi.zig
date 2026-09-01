@@ -1,7 +1,7 @@
 //! C ABI surface for the shared library, called from Python via ctypes.
 //! This module should stay a thin marshalling layer -- decode C-ABI
 //! arguments, call into the same shared modules the native binaries use
-//! (pipeline.zig, recovery.zig, smt.zig), encode the result back out --
+//! (pipeline.zig, recovery.zig, smt/writer.zig), encode the result back out --
 //! not a second implementation of any of their logic.
 //!
 //! Three entry points:
@@ -187,7 +187,7 @@ fn sourceToSmtImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, 
 /// Full pipeline: raw UVL source -> SMT-LIB 2 text, backing the native
 /// `uvl2smt` binary and (for backend="zig") `UVL.to_smt()`. Unlike
 /// `uvl_source_to_cnf`, not restricted to the Boolean language level --
-/// see smt.zig.
+/// see smt/writer.zig.
 export fn uvl_source_to_smt(
     src_ptr: [*]const u8,
     src_len: usize,
@@ -427,13 +427,13 @@ fn hierarchyToCnfImpl(
         const parsed = try constraint.parseConstraint(alloc, tokens, 0);
         if (parsed.node == null) {
             // attribute ref / comparison: not CNF-encodable. Lark/ANTLR's
-            // own text-based classification (main.py's
+            // own text-based classification (feature_extraction.py's
             // _is_arithmetic_constraint) can't reliably tell these apart
-            // from a genuinely boolean constraint (e.g. a dotted
-            // reference used with no comparison operator at all, like
-            // `A.enabled => B`), so this -- the same real syntactic
-            // check `uvl_source_to_cnf` already does for zig -- is the
-            // source of truth for all three backends.
+            // from a boolean constraint (e.g. a dotted reference used with
+            // no comparison operator at all, like `A.enabled => B`), so
+            // this -- the same syntactic check `uvl_source_to_cnf` already
+            // does for zig -- is the source of truth for all three
+            // backends.
             const trimmed = std.mem.trim(u8, text, " \t\r\n");
             if (parsed.saw_dot) {
                 pipeline.dbgPrint("Info: Skipping constraint {d}: '{s}' (LL: attribute-reference)\n", .{ idx, trimmed });

@@ -320,8 +320,7 @@ constraints
 # test_uvllang.py::TestFromCnfAndFileOutputs covers to_smt(filepath) itself
 # (writing to a real path and reading it back); nothing here duplicates that.
 
-# The uvl2smt CLI is now a native Zig binary (parser/zig-out/bin/uvl2smt),
-# not this uvllang.cli.uvl2smt Python entry point (removed -- see
-# uvllang/cli.py's module docstring). See tests/test_zig_smt.py for its
-# coverage; UVL.to_smt() (exercised elsewhere in this file, for every
-# backend) is a ctypes call into the same writer.
+# The uvl2smt CLI is a native Zig binary (parser/zig-out/bin/uvl2smt); see
+# tests/test_zig_smt.py for its coverage. UVL.to_smt() (exercised
+# elsewhere in this file, for every backend) is a ctypes call into the
+# same writer.

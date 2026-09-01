@@ -4,14 +4,12 @@ const tok = @import("token");
 const Token = tok.Token;
 const Kind = tok.Kind;
 
-/// Boolean-constraint AST. Mirrors the shape of the tuple AST that
-/// uvllang/main.py's `_parse_boolean_expr` builds (`LIT`/`NOT`/`AND`/`OR`/
-/// `IMPLIES`/`EQUIVALENCE`), so `nnf`/`distribute`/`extractClauses` below
-/// are a direct, typed port of `_to_nnf`/`_distribute`/`_extract_clauses`.
-/// `invalid` stands in for anything the CNF pipeline can't encode
-/// (a comparison, or a plain arithmetic atom) -- reaching it during clause
-/// generation is a bug, since such constraints are filtered out earlier by
-/// checking `saw_comparison`.
+/// Boolean-constraint AST. `nnf`/`distribute`/`extractClauses` below
+/// convert it to CNF via negation normal form and distribution of `or`
+/// over `and`. `invalid` stands in for anything the CNF pipeline can't
+/// encode (a comparison, or a plain arithmetic atom) -- reaching it during
+/// clause generation is a bug, since such constraints are filtered out
+/// earlier by checking `saw_comparison`.
 pub const Node = union(enum) {
     lit: []const u8,
     not: *Node,
@@ -360,9 +358,7 @@ fn parseEquivalence(c: *ParseCtx) ParseError!*Node {
 pub const ConstraintParse = struct {
     /// CNF-usable tree: null whenever the constraint should be dropped
     /// from the CNF -- either it touches an attribute reference (a dotted
-    /// literal) or a numeric comparison, matching the classification
-    /// uvllang/main.py's `_constraints_to_cnf` does on the reconstructed
-    /// constraint text.
+    /// literal) or a numeric comparison.
     node: ?*Node,
     /// The complete tree regardless of `node`/`skip` -- includes `.cmp`
     /// and arithmetic sub-trees a CNF-only consumer can't use. Always
@@ -725,10 +721,10 @@ fn buildCnf(alloc: Allocator, features2ids: *const std.StringHashMap(i32), n: *N
     }
 }
 
-/// Direct port of UVL._to_cnf's overall shape (NNF, then CNF, then
-/// literal resolution) -- see the module doc comment above for why the
-/// distribute step itself is subsumption-pruned rather than a plain,
-/// unguarded pairwise distribute.
+/// Converts one constraint to CNF: negation normal form, then
+/// distribution of `or` over `and`, then literal resolution -- see the
+/// module doc comment above for why the distribute step itself is
+/// subsumption-pruned rather than a plain, unguarded pairwise distribute.
 pub fn generateClauses(alloc: Allocator, features2ids: *const std.StringHashMap(i32), root: *Node) CnfError![][]i32 {
     const in_nnf = try nnf(alloc, root, false);
     return buildCnf(alloc, features2ids, in_nnf);
@@ -788,7 +784,7 @@ test "comparison is skipped" {
     const parsed = try parseConstraint(alloc, &toks, 0);
     try std.testing.expect(parsed.node == null);
     try std.testing.expect(parsed.saw_comparison);
-    // Phase 2: `.full` is still built even though `.node` is nulled.
+    // `.full` is still built even though `.node` is nulled.
     try std.testing.expect(parsed.full.* == .cmp);
     try std.testing.expectEqual(CmpOp.gt, parsed.full.cmp.op);
     try std.testing.expect(parsed.full.cmp.lhs.* == .ref);
