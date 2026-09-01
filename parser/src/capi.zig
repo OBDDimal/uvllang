@@ -30,6 +30,7 @@ const subsumption = @import("subsumption.zig");
 const recovery = @import("recovery.zig");
 const pipeline = @import("pipeline.zig");
 const smt = @import("smt.zig");
+const conversion = @import("conversion.zig");
 
 const gpa = std.heap.smp_allocator;
 
@@ -70,26 +71,15 @@ fn statusForError(err: anyerror) StatusCode {
         error.UnterminatedString, error.UnexpectedChar => .lex_error,
         error.UnexpectedToken, error.UnexpectedEnd => .parse_error,
         error.UnknownFeature => .unknown_feature,
-        error.NoRoot, error.InvalidInput => .invalid_input,
+        error.NoRoot, error.InvalidInput, error.NoFeatures, error.NoHeader => .invalid_input,
         else => .out_of_memory,
     };
 }
 
-/// Counts of constructs above the plain Boolean language level -- see
-/// docs/non_boolean_support.md. Tier 1 (corrupts CNF correctness or loses
-/// a real constraint) first, then Tier 2 (a constraint is dropped), then
-/// Tier 3 (decorative metadata only). Mirrors uvllang.main.UVL's
-/// NonBooleanConstructError policy: the Python side raises by default on
-/// any nonzero Tier 1/2 count, and only ever warns on Tier 3.
-pub const NonBooleanCounts = extern struct {
-    cardinality_groups: usize = 0,
-    constraint_attributes: usize = 0,
-    cardinality_features: usize = 0,
-    attribute_ref_constraints: usize = 0,
-    comparison_constraints: usize = 0,
-    typed_features: usize = 0,
-    attributed_features: usize = 0,
-};
+/// See pipeline.zig's NonBooleanCounts -- defined there so main.zig
+/// (uvl2cnf --strict) and this file (UVL(drop_non_boolean=False)) share
+/// one isThreatening instead of each tracking their own copy.
+pub const NonBooleanCounts = pipeline.NonBooleanCounts;
 
 fn sourceToCnfImpl(
     alloc: Allocator,
@@ -120,16 +110,7 @@ fn sourceToCnfImpl(
         out_clauses = simplified.clauses;
     }
 
-    const b = &result.builder;
-    out_non_boolean.* = .{
-        .cardinality_groups = b.cardinality_group_count,
-        .constraint_attributes = b.constraint_attribute_count,
-        .cardinality_features = b.cardinality_feature_count,
-        .attribute_ref_constraints = built.counts.attribute_ref_constraints,
-        .comparison_constraints = built.counts.comparison_constraints,
-        .typed_features = b.typed_feature_count,
-        .attributed_features = b.attributed_feature_count,
-    };
+    out_non_boolean.* = pipeline.mergeNonBooleanCounts(&result.builder, built.counts);
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
@@ -165,6 +146,16 @@ export fn uvl_source_to_cnf(
         return @intFromEnum(statusForError(err));
     };
     return @intFromEnum(StatusCode.ok);
+}
+
+/// Single source of truth for "does this model use constructs above the
+/// Boolean language level that a strict caller should refuse over" --
+/// `NonBooleanCounts.isThreatening` (pipeline.zig), shared with `uvl2cnf
+/// --strict` (main.zig). Callers that already parsed elsewhere (Lark/
+/// ANTLR, via `uvl_hierarchy_to_cnf`) merge their own tree-walk counts
+/// into a `NonBooleanCounts` in Python before calling this.
+export fn uvl_is_non_boolean_threatening(counts: *const NonBooleanCounts, do_conversion: u8) callconv(.c) u8 {
+    return @intFromBool(counts.isThreatening(do_conversion != 0));
 }
 
 fn sourceToSmtImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const u8, out_len: *usize) !void {
@@ -283,8 +274,16 @@ fn parseSourceFullImpl(alloc: Allocator, source: []const u8, out_ptr: *[*]const 
         }
     }
 
+    // is_boolean=1 when `c.node` is non-null, i.e. Boolean-encodable
+    // (matches BaseFeatureExtractor.boolean_constraints/arithmetic_constraints'
+    // meaning: convertible to CNF or not) -- the ground truth constraint.zig
+    // itself already computed while parsing, so the Python side doesn't
+    // need to re-derive it with a text heuristic.
     try writeU32(w, @intCast(result.constraints.len));
-    for (result.constraints) |c| try writeBytes(w, c.text);
+    for (result.constraints) |c| {
+        try writeBytes(w, c.text);
+        try w.writeByte(if (c.node != null) 1 else 0);
+    }
 
     const owned = try aw.toOwnedSlice();
     out_ptr.* = owned.ptr;
@@ -319,6 +318,16 @@ pub const CGroup = extern struct {
     member_count: usize,
 };
 
+pub const no_max: u32 = std.math.maxInt(u32); // sentinel for `[min..*]`
+
+pub const CCardinalityGroup = extern struct {
+    parent_idx: usize,
+    min: u32,
+    max: u32, // no_max means "no upper bound"
+    member_start: usize,
+    member_count: usize,
+};
+
 const no_root = std.math.maxInt(usize);
 
 fn hierarchyToCnfImpl(
@@ -328,8 +337,11 @@ fn hierarchyToCnfImpl(
     edges: []const CEdge,
     groups: []const CGroup,
     group_members: []const usize,
+    cardinality_groups: []const CCardinalityGroup,
+    cardinality_group_members: []const usize,
     constraints: []const [*:0]const u8,
     do_simplify: bool,
+    do_conversion: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -376,6 +388,22 @@ fn hierarchyToCnfImpl(
         try clauses.append(alloc, clause);
     }
     try cnf.hierarchyToCnf(alloc, &hierarchy, &ids, &clauses);
+
+    if (do_conversion) {
+        for (cardinality_groups) |cg| {
+            if (cg.parent_idx >= names.len) return error.InvalidInput;
+            if (cg.member_start + cg.member_count > cardinality_group_members.len) return error.InvalidInput;
+            var group = builder_mod.CardinalityGroup{
+                .parent = names[cg.parent_idx],
+                .range = .{ .min = cg.min, .max = if (cg.max == no_max) null else cg.max },
+            };
+            for (cardinality_group_members[cg.member_start .. cg.member_start + cg.member_count]) |mi| {
+                if (mi >= names.len) return error.InvalidInput;
+                try group.members.append(alloc, names[mi]);
+            }
+            try conversion.emitCardinalityGroupClauses(alloc, group, &ids, &clauses);
+        }
+    }
 
     var attribute_ref_constraints: usize = 0;
     var comparison_constraints: usize = 0;
@@ -434,12 +462,17 @@ fn hierarchyToCnfImpl(
 
 /// Hybrid pipeline: caller already parsed the model; only CNF generation
 /// runs here. `features_ptr` is the full feature-name table; every other
-/// array indexes into it. `out_non_boolean` is only ever populated with
-/// `attribute_ref_constraints`/`comparison_constraints` -- the other Tier
-/// 1/Tier 3 categories in NonBooleanCounts depend on raw source this
-/// function never sees (only `uvl_source_to_cnf` sees it); callers using
-/// this hybrid path (Lark/ANTLR) get those from their own tree walk
-/// instead and merge the two.
+/// array indexes into it. `cardinality_groups`/`do_conversion` mirror
+/// `uvl_source_to_cnf`'s `conversion` flag (see conversion.zig) --
+/// feature-local constraint attributes need no separate parameter here,
+/// since the caller (Lark/ANTLR, when conversion is requested) folds
+/// their text into `constraints_ptr` and this function's constraint loop
+/// already treats every entry identically. `out_non_boolean` is only
+/// ever populated with `attribute_ref_constraints`/`comparison_constraints`
+/// -- the other Tier 1/Tier 3 categories in NonBooleanCounts depend on
+/// raw source this function never sees (only `uvl_source_to_cnf` sees
+/// it); callers using this hybrid path (Lark/ANTLR) get those from their
+/// own tree walk instead and merge the two.
 export fn uvl_hierarchy_to_cnf(
     features_ptr: [*]const [*:0]const u8,
     n_features: usize,
@@ -450,9 +483,14 @@ export fn uvl_hierarchy_to_cnf(
     n_groups: usize,
     group_members_ptr: [*]const usize,
     n_group_members: usize,
+    cardinality_groups_ptr: [*]const CCardinalityGroup,
+    n_cardinality_groups: usize,
+    cardinality_group_members_ptr: [*]const usize,
+    n_cardinality_group_members: usize,
     constraints_ptr: [*]const [*:0]const u8,
     n_constraints: usize,
     do_simplify: u8,
+    do_conversion: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
     out_non_boolean: *NonBooleanCounts,
@@ -466,8 +504,11 @@ export fn uvl_hierarchy_to_cnf(
         edges_ptr[0..n_edges],
         groups_ptr[0..n_groups],
         group_members_ptr[0..n_group_members],
+        cardinality_groups_ptr[0..n_cardinality_groups],
+        cardinality_group_members_ptr[0..n_cardinality_group_members],
         constraints_ptr[0..n_constraints],
         do_simplify != 0,
+        do_conversion != 0,
         out_ptr,
         out_len,
         out_non_boolean,
@@ -483,22 +524,50 @@ export fn uvl_hierarchy_to_cnf(
 /// `infer_propagation` gates the experimental, opt-in propagation-based
 /// implication recovery (see recovery.zig's `augmentGraphWithPropagation`
 /// doc comment); see recovery.zig for the full algorithm.
+/// `do_verify`, if nonzero, re-parses the recovered text and compares its
+/// CNF against the input as an exact clause set (recovery.verifyRecovery
+/// -- the same check any2uvl's `--verify` runs), writing the result into
+/// `out_orig_clauses`/`out_missing`/`out_extra` rather than requiring the
+/// Python caller to redo that comparison itself. All three are set to 0
+/// when `do_verify` is 0.
 export fn uvl_dimacs_to_uvl(
     dimacs_ptr: [*]const u8,
     dimacs_len: usize,
     optimize: u8,
     by_name: u8,
     infer_propagation: u8,
+    do_verify: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
+    out_orig_clauses: *usize,
+    out_missing: *usize,
+    out_extra: *usize,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
+    const alloc = arena_state.allocator();
 
-    const text = recovery.recover(arena_state.allocator(), gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0, infer_propagation != 0) catch |err| {
+    const text = recovery.recover(alloc, gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0, infer_propagation != 0) catch |err| {
         setError("uvl_dimacs_to_uvl: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
+
+    out_orig_clauses.* = 0;
+    out_missing.* = 0;
+    out_extra.* = 0;
+    if (do_verify != 0) {
+        const parsed = recovery.parseDimacs(alloc, dimacs_ptr[0..dimacs_len]) catch |err| {
+            setError("uvl_dimacs_to_uvl: --verify: {t}", .{err});
+            return @intFromEnum(statusForError(err));
+        };
+        const vr = recovery.verifyRecovery(alloc, text, parsed.clauses.items) catch |err| {
+            setError("uvl_dimacs_to_uvl: --verify: {t}", .{err});
+            return @intFromEnum(statusForError(err));
+        };
+        out_orig_clauses.* = vr.total_orig_clauses;
+        out_missing.* = vr.missing;
+        out_extra.* = vr.extra;
+    }
 
     out_ptr.* = text.ptr;
     out_len.* = text.len;

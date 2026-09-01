@@ -14,6 +14,7 @@ import shutil
 import subprocess
 
 import pytest
+from pysat.formula import CNF
 
 from uvllang import UVL, _zig
 
@@ -76,9 +77,9 @@ def _run_zig(zig_parser, uvl_path, out_path):
     result = subprocess.run(
         [zig_parser, uvl_path, out_path, "--simplify"], capture_output=True, text=True
     )
-    assert result.returncode == 0, (
-        f"uvl2cnf failed on {uvl_path}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"uvl2cnf failed on {uvl_path}:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
 
 def _python_dimacs(uvl_path, out_path):
@@ -94,9 +95,10 @@ def _python_dimacs(uvl_path, out_path):
     # behavior intentionally match, see docs/pipeline_clause_dedup.md), so
     # without this the two sides would compare unsimplified against
     # simplified and always mismatch.
-    model = UVL(from_file=uvl_path, backend="lark", drop_non_boolean=True, simplify=True)
-    features2ids = {f: i + 1 for i, f in enumerate(sorted(set(model.features)))}
-    model.to_cnf(features2ids, verbose_info=False).to_file(out_path)
+    model = UVL(
+        from_file=uvl_path, backend="lark", drop_non_boolean=True, simplify=True
+    )
+    model.to_cnf(verbose_info=False).to_file(out_path)
 
 
 def _assert_equivalent(zig_out, py_out):
@@ -237,12 +239,20 @@ def test_zig_matches_python_on_synthetic_snippets(zig_parser, name, tmp_path):
 # with Zig's own native parse.
 
 
-def _named_clauses(clauses, id_to_name):
+def _named_clauses(raw_dimacs):
+    """Named (not numeric) clause set, from zig's own raw DIMACS bytes --
+    comparing by feature name instead of by id sidesteps the two calls
+    below having no reason to agree on numbering (each assigns ids over
+    its own, potentially differently-ordered, feature list)."""
+    cnf = CNF(from_string=raw_dimacs.decode("utf-8"))
+    id_to_name = {
+        int(ident): name for _, ident, name in (c.split(" ", 2) for c in cnf.comments)
+    }
     return {
         frozenset(
             id_to_name[lit] if lit > 0 else f"!{id_to_name[-lit]}" for lit in clause
         )
-        for clause in clauses
+        for clause in cnf.clauses
     }
 
 
@@ -250,7 +260,7 @@ def _named_clauses(clauses, id_to_name):
 def test_zig_capi_hierarchy_matches_full_pipeline(zig_parser, name):
     text = SYNTHETIC_SNIPPETS[name]
 
-    full_clauses, full_id_to_name, _ = _zig.parse_source_to_cnf(text)
+    _, full_dimacs = _zig.parse_source_to_cnf(text)
 
     # drop_non_boolean=True: one snippet (cardinality_group_with_cross_tree_constraint)
     # uses feature cardinality, which would otherwise raise on construction
@@ -259,13 +269,11 @@ def test_zig_capi_hierarchy_matches_full_pipeline(zig_parser, name):
     model = UVL(from_str=text, backend="lark", drop_non_boolean=True)
     builder = model.builder()
     features = sorted(set(model.features))
-    hybrid_clauses, hybrid_id_to_name, _ = _zig.hierarchy_to_cnf(
+    _, hybrid_dimacs = _zig.hierarchy_to_cnf(
         features, builder.root_feature, builder.feature_hierarchy, model.constraints
     )
 
-    assert _named_clauses(full_clauses, full_id_to_name) == _named_clauses(
-        hybrid_clauses, hybrid_id_to_name
-    )
+    assert _named_clauses(full_dimacs) == _named_clauses(hybrid_dimacs)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +324,9 @@ def test_zig_matches_lark_on_extraction(uvl_path):
     )
     assert zig_model.feature_types == lark_model.feature_types
     assert zig_model.builder().root_feature == lark_model.builder().root_feature
-    assert zig_model.builder().feature_hierarchy == lark_model.builder().feature_hierarchy
+    assert (
+        zig_model.builder().feature_hierarchy == lark_model.builder().feature_hierarchy
+    )
 
     # feature_attributes: compared against both other backends. Lark used
     # to silently drop a small number of attribute values on pathological
@@ -326,7 +336,7 @@ def test_zig_matches_lark_on_extraction(uvl_path):
     # (a bare reference used as a whole boolean constraint vs. as the
     # left-hand side of a comparison), and running it under Earley with
     # `ambiguity="explicit"` produced `_ambig` tree nodes that
-    # uvllang.main's tree walker never accounted for, silently
+    # uvllang.uvl's tree walker never accounted for, silently
     # mis-extracting on the rare input where the ambiguity was actually
     # exercised. Fixed at the grammar level (see grammars/uvl.lark's
     # `constraint_atom` and _load_lark_parser's docstring) rather than
@@ -345,32 +355,92 @@ def test_zig_matches_lark_on_extraction(uvl_path):
     EXAMPLE_UVL_FILES,
     ids=[os.path.basename(p) for p in EXAMPLE_UVL_FILES],
 )
-def test_zig_to_smt_agrees_with_antlr_on_satisfiability(uvl_path):
-    """backend="zig"'s to_smt() is a native writer (parser/src/smt.zig),
-    not the shared Python string-splicing implementation ANTLR/Lark still
-    use -- the two no longer produce comparable text (different variable
-    naming/quoting/sort-inference choices), so this checks the property
-    that actually matters instead: both encodings must agree on whether
-    the model is satisfiable at all, checked with z3 (see
-    tests/test_zig_smt.py for the native writer's own, more detailed
-    coverage). Both writers are held to the same hard requirement: their
-    output must always be valid, solvable SMT-LIB, no exceptions --
-    z3-incompatibilities previously found in the legacy writer (a
-    UVL-quoted feature name emitted with its literal quote characters; an
-    attribute unconditionally declared Int even when string-valued) have
-    been fixed for parity with the native one (see _smt_ident/
-    _smt_infer_sort in uvllang/main.py).
+def test_to_smt_is_identical_across_backends(uvl_path):
+    """to_smt() delegates to uvllang._zig.source_to_smt (parser/src/
+    smt.zig) for every backend -- all three must produce identical,
+    solvable SMT-LIB (see tests/test_zig_smt.py for the writer's own
+    detailed coverage).
     """
     z3 = pytest.importorskip("z3")
     zig_model = UVL(from_file=uvl_path, backend="zig", drop_non_boolean=True)
     antlr_model = UVL(from_file=uvl_path, backend="antlr")
+    lark_model = UVL(from_file=uvl_path, backend="lark")
 
-    def check(smt_text):
-        solver = z3.Solver()
-        solver.from_string(smt_text)
-        return str(solver.check())
+    zig_smt = zig_model.to_smt()
+    assert zig_smt == antlr_model.to_smt() == lark_model.to_smt()
 
-    zig_result = check(zig_model.to_smt())
-    antlr_result = check(antlr_model.to_smt())
-    assert zig_result == "sat"
-    assert zig_result == antlr_result
+    solver = z3.Solver()
+    solver.from_string(zig_smt)
+    assert str(solver.check()) == "sat"
+
+
+# ---------------------------------------------------------------------------
+# uvl2cnf --strict: refuses instead of warning when a construct above the
+# Boolean language level would be silently dropped (parser/src/main.zig,
+# parser/src/pipeline.zig's NonBooleanCounts.isThreatening).
+
+
+def test_strict_fails_on_group_cardinality(zig_parser, tmp_path):
+    uvl_path = tmp_path / "model.uvl"
+    uvl_path.write_text(
+        "features\n    Root\n        [2..3]\n            A\n            B\n            C\n"
+    )
+    result = subprocess.run(
+        [zig_parser, "--strict", str(uvl_path), str(tmp_path / "out.dimacs")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "refusing" in result.stderr
+
+
+def test_strict_succeeds_without_non_boolean_constructs(zig_parser, tmp_path):
+    uvl_path = tmp_path / "model.uvl"
+    uvl_path.write_text("features\n    Root\n        mandatory\n            A\n")
+    out_path = tmp_path / "out.dimacs"
+    result = subprocess.run(
+        [zig_parser, "--strict", str(uvl_path), str(out_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert out_path.exists()
+
+
+def test_strict_with_conversion_succeeds_on_group_cardinality(zig_parser, tmp_path):
+    uvl_path = tmp_path / "model.uvl"
+    uvl_path.write_text(
+        "features\n    Root\n        [2..3]\n            A\n            B\n            C\n"
+    )
+    result = subprocess.run(
+        [
+            zig_parser,
+            "--strict",
+            "--conversion",
+            str(uvl_path),
+            str(tmp_path / "out.dimacs"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_is_non_boolean_threatening_matches_uvl_drop_non_boolean():
+    """uvllang._zig.is_non_boolean_threatening (ctypes -> capi.zig's
+    NonBooleanCounts.isThreatening) is the single source of truth
+    UVL(drop_non_boolean=False) relies on -- exercise it directly."""
+    threatening = {
+        "cardinality_groups": 1,
+        "constraint_attributes": 0,
+        "cardinality_features": 0,
+        "attribute_ref_constraints": 0,
+        "comparison_constraints": 0,
+        "typed_features": 0,
+        "attributed_features": 0,
+    }
+    assert _zig.is_non_boolean_threatening(threatening, conversion=False)
+    assert not _zig.is_non_boolean_threatening(threatening, conversion=True)
+
+    tier3_only = {**threatening, "cardinality_groups": 0, "typed_features": 1}
+    assert not _zig.is_non_boolean_threatening(tier3_only, conversion=False)

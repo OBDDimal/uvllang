@@ -29,6 +29,14 @@ fn usage() void {
         \\constraints. Feature cardinality (clone multiplicity) is not yet
         \\covered -- see docs/non_boolean_support.md. Off by default.
         \\
+        \\--strict exits with an error instead of writing a CNF that
+        \\silently drops a construct above the Boolean language level
+        \\(group/feature cardinality, feature-local constraint attributes,
+        \\or a dropped attribute-reference/comparison constraint) --
+        \\--conversion exempts group cardinality and constraint attributes,
+        \\since those are actually handled at that point. Off by default
+        \\(the warnings below print either way).
+        \\
     , .{});
 }
 
@@ -53,6 +61,7 @@ pub fn main(init: std.process.Init) !u8 {
     var parse_only = false;
     var do_simplify = false;
     var do_conversion = false;
+    var do_strict = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -68,6 +77,8 @@ pub fn main(init: std.process.Init) !u8 {
             do_simplify = true;
         } else if (std.mem.eql(u8, arg, "--conversion")) {
             do_conversion = true;
+        } else if (std.mem.eql(u8, arg, "--strict")) {
+            do_strict = true;
         } else if (in_path == null) {
             in_path = arg;
         } else if (out_path == null) {
@@ -110,6 +121,14 @@ pub fn main(init: std.process.Init) !u8 {
     const clauses = built.clauses;
 
     pipeline.printNonBooleanWarnings(&result.builder, built.counts, do_conversion);
+
+    if (do_strict) {
+        const counts = pipeline.mergeNonBooleanCounts(&result.builder, built.counts);
+        if (counts.isThreatening(do_conversion)) {
+            std.debug.print("error: --strict: refusing to write a CNF that silently drops a construct above the Boolean language level (see warnings above)\n", .{});
+            return 1;
+        }
+    }
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;

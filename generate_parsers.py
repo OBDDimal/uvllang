@@ -12,7 +12,10 @@ def generate_parsers():
     """Generate the Python parsers from ANTLR4 grammars."""
     repo_root = Path(__file__).parent
     grammars_dir = repo_root / "grammars"
-    uvl_dir = repo_root / "uvl"
+
+    # uvllang/antlr4/ also holds uvl_custom_lexer.py, the one hand-written ANTLR-adjacent module
+    dest_dir = repo_root / "uvllang" / "antlr4"
+    dest_dir.mkdir(parents=True, exist_ok=True)
 
     # ANTLR4 command - run from grammars directory
     cmd = [
@@ -37,7 +40,7 @@ def generate_parsers():
         print("antlr4 command not found. Please install antlr4-tools.")
         return 1
 
-    # Move generated .py files to uvl directory
+    # Move generated .py files to uvllang/antlr4/
     generated_files = list(grammars_dir.glob("*.py"))
     for file in generated_files:
         # Rename files to snake_case
@@ -46,9 +49,9 @@ def generate_parsers():
         else:
             new_name = file.name
 
-        dest = uvl_dir / new_name
+        dest = dest_dir / new_name
         file.rename(dest)
-        print(f"Moved {file.name} to uvl/{new_name}")
+        print(f"Moved {file.name} to uvllang/antlr4/{new_name}")
 
     # Clean up ANTLR4 artifacts
     for pattern in ["*.tokens", "*.interp"]:

@@ -7,7 +7,7 @@ const builder_mod = @import("builder.zig");
 const Builder = builder_mod.Builder;
 const constraint = @import("constraint.zig");
 
-pub const ParseError = error{ UnexpectedToken, UnexpectedEnd } || Allocator.Error || constraint.ParseError;
+pub const ParseError = error{ UnexpectedToken, UnexpectedEnd, NoFeatures } || Allocator.Error || constraint.ParseError;
 
 const P = struct {
     alloc: Allocator,
@@ -457,6 +457,12 @@ pub fn parseModel(alloc: Allocator, tokens: []const Token) ParseError!ParseResul
         try p.expect(.dedent);
     }
 
+    // A valid UVL model has at least one feature (the root); this also
+    // rejects non-UVL input that happens not to hit any of the branches
+    // above (e.g. a DIMACS or SMT-LIB file) instead of silently returning
+    // an empty model.
+    if (b.ordered_features.items.len == 0) return ParseError.NoFeatures;
+
     return .{ .builder = b, .constraints = try constraints.toOwnedSlice(alloc) };
 }
 
@@ -598,4 +604,23 @@ test "splitTopLevelCommaList: nested commas inside a function call are not split
 
     const empty = try splitTopLevelCommaList(alloc, "[]");
     try std.testing.expectEqual(@as(usize, 0), empty.len);
+}
+
+test "parseModel rejects a zero-feature model (e.g. non-UVL input)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const tokens = try lexer.tokenize(alloc, "p cnf 1 1\n1 0\n");
+    try std.testing.expectError(ParseError.NoFeatures, parseModel(alloc, tokens));
+}
+
+test "parseModel accepts a single-feature model" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const tokens = try lexer.tokenize(alloc, "features\n    Root\n");
+    const result = try parseModel(alloc, tokens);
+    try std.testing.expectEqual(@as(usize, 1), result.builder.ordered_features.items.len);
 }

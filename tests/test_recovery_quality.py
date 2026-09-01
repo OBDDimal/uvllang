@@ -82,17 +82,39 @@ def _entailed(solver, clause):
 
 
 def _dimacs_equivalent(uvl_file, dimacs_file):
+    # orig_cnf and rec_cnf each assign their own ids (whatever produced
+    # dimacs_file numbered it its own way; UVL.to_cnf() always numbers
+    # alphabetically) -- both carry a "c <id> <name>" mapping in their
+    # comments, so clauses are compared by name, renumbered here onto one
+    # shared, freshly assigned id space.
     orig_cnf = CNF(from_file=dimacs_file)
-    ids2features = {}
-    for comment in orig_cnf.comments:
-        parts = comment.strip().split(None, 2)
-        if len(parts) >= 3:
-            ids2features[int(parts[1])] = parts[2]
-    features2ids = {v: k for k, v in ids2features.items()}
+    orig_id_to_name = {
+        int(parts[1]): parts[2]
+        for parts in (c.strip().split(None, 2) for c in orig_cnf.comments)
+        if len(parts) >= 3
+    }
 
-    rec_clauses = UVL(from_file=uvl_file).to_cnf(features2ids).clauses
-    orig = frozenset(tuple(sorted(c)) for c in orig_cnf.clauses)
-    rec  = frozenset(tuple(sorted(c)) for c in rec_clauses)
+    rec_cnf = UVL(from_file=uvl_file).to_cnf()
+    rec_id_to_name = {
+        int(ident): name for _, ident, name in (c.split(" ", 2) for c in rec_cnf.comments)
+    }
+
+    names = sorted(set(orig_id_to_name.values()) | set(rec_id_to_name.values()))
+    ids = {name: i + 1 for i, name in enumerate(names)}
+
+    def _renumbered(clauses, id_to_name):
+        return frozenset(
+            tuple(
+                sorted(
+                    ids[id_to_name[lit]] if lit > 0 else -ids[id_to_name[-lit]]
+                    for lit in clause
+                )
+            )
+            for clause in clauses
+        )
+
+    orig = _renumbered(orig_cnf.clauses, orig_id_to_name)
+    rec = _renumbered(rec_cnf.clauses, rec_id_to_name)
     missing = orig - rec
     extra = rec - orig
 

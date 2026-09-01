@@ -13,6 +13,9 @@ A parser for the Universal Variability Language (UVL). Supports conversion to CN
 ```bash
 pip install uvllang
 
+# With Lark parser support (backend="lark" in the Python API)
+pip install uvllang[lark]
+
 # With ANTLR parser support (backend="antlr" in the Python API)
 pip install uvllang[antlr]
 ```
@@ -34,7 +37,7 @@ uvl2cnf --conversion model.uvl    # convert group cardinality + feature-local co
 
 For Lark/ANTLR specifically (e.g. cross-checking against this backend), use the Python API instead: `UVL(from_file="model.uvl", backend="lark").to_cnf()`.
 
-Only the plain **Boolean** language level is supported for CNF conversion, identically across all three backends — group cardinality (`[i..j]` groups), feature-local `{constraint ...}` attributes, and feature cardinality (clone multiplicity) all threaten the CNF's correctness if silently ignored, which is what happens by default (see [`docs/non_boolean_support.md`](docs/non_boolean_support.md)). `--conversion` (CLI) / `conversion=True` (Python API, `backend="zig"` only) applies the UVLParser paper's conversion strategies for the first two of these instead of dropping them; feature cardinality is documented future work, not built. `uvl2cnf` always warns and continues regardless of `--conversion`; `to_cnf()` in the Python API raises `NonBooleanConstructError` by default for group/feature cardinality and feature-local constraint attributes plus dropped constraints (attribute-reference/comparison), unless you pass `drop_non_boolean=True` to `UVL(...)` — `conversion=True` removes group cardinality and constraint attributes from that raising set, since they're actually handled at that point. `to_smt()` has no such restriction and never raises. Typed features and unreferenced value attributes are always just warned about, never raised on.
+Only the plain **Boolean** language level is supported for CNF conversion, identically across all three backends — group cardinality (`[i..j]` groups), feature-local `{constraint ...}` attributes, and feature cardinality (clone multiplicity) all threaten the CNF's correctness if silently ignored, which is what happens by default (see [`docs/non_boolean_support.md`](docs/non_boolean_support.md)). `--conversion` (CLI) / `conversion=True` (Python API, all three backends) applies the UVLParser paper's conversion strategies for the first two of these instead of dropping them; feature cardinality is documented future work, not built. `uvl2cnf` always warns and continues regardless of `--conversion`; `to_cnf()` in the Python API raises `NonBooleanConstructError` by default for group/feature cardinality and feature-local constraint attributes plus dropped constraints (attribute-reference/comparison), unless you pass `drop_non_boolean=True` to `UVL(...)` — `conversion=True` removes group cardinality and constraint attributes from that raising set, since they're actually handled at that point. `to_smt()` has no such restriction and never raises. Typed features and unreferenced value attributes are always just warned about, never raised on.
 
 ### uvl2smt — UVL to SMT-LIB 2
 
@@ -73,17 +76,19 @@ from uvllang import UVL
 
 model = UVL(from_file="model.uvl")
 
-# CNF (PySAT CNF object)
-cnf = model.to_cnf()
-cnf.to_file("output.dimacs")
+# CNF (uvl2cnf), written straight to a DIMACS file
+model.to_dimacs("output.dimacs")
+cnf = model.to_cnf()  # or as a PySAT CNF object
 
-# SMT-LIB 2
+# SMT-LIB 2 (uvl2smt) -- returns text, or writes a file if given a path
 smt = model.to_smt()
-with open("output.smt2", "w") as f:
-    f.write(smt)
+model.to_smt("output.smt2")
 
-# DIMACS → UVL recovery
-UVL.from_cnf("model.dimacs", "recovered.uvl", optimize=True, by_name=True)
+# DIMACS -> UVL recovery (any2uvl), as an alternate constructor: from a
+# file path, or directly from a pysat.formula.CNF object
+recovered = UVL(from_cnf="model.dimacs", optimize=True, by_name=True)
+recovered = UVL(from_cnf=cnf, verify=True)
+print(recovered.recovery_result)  # {"total_orig_clauses", "missing", "extra"}
 ```
 
 ## Dependencies

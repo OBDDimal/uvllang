@@ -8,13 +8,21 @@ Entry points:
     types, hierarchy, attributes, raw constraint text) but no CNF -- backs
     UVL's non-CNF properties on backend="zig", called lazily.
   - `hierarchy_to_cnf`: only the CNF-generation step, for a hierarchy and
-    constraint list already extracted by Python (ANTLR or Lark).
+    constraint list already extracted by Python (ANTLR or Lark). Also
+    takes `conversion`/`cardinality_groups`, mirroring
+    `parse_source_to_cnf`'s `conversion` flag.
+  - `is_non_boolean_threatening`: given a `non_boolean` dict, whether
+    UVL(drop_non_boolean=False) should raise -- the single source of
+    truth for this is capi.zig's NonBooleanCounts.isThreatening.
   - `dimacs_to_uvl`: CNF -> UVL recovery (any2uvl).
 
-`hierarchy_to_cnf` returns `(clauses, id_to_name)`, the shape `UVL.to_cnf`
-needs to build a `pysat.formula.CNF`. `parse_source_to_cnf` returns that
-plus a third `non_boolean` counts dict (see its docstring). `parse_source_full`
-returns a dict, see its docstring. `dimacs_to_uvl` returns UVL text.
+`hierarchy_to_cnf` and `parse_source_to_cnf` both return `(non_boolean,
+raw_dimacs)` -- `raw_dimacs` is zig's own DIMACS bytes verbatim
+(writeDimacs, parser/src/cnf.zig); this module does not parse DIMACS
+itself, `UVL.to_cnf`/`UVL.to_dimacs` hand the bytes straight to
+`pysat.formula.CNF`. `parse_source_full` returns a dict, see its
+docstring. `dimacs_to_uvl` returns `(uvl_text, verify_result)`, see its
+docstring.
 """
 
 import ctypes
@@ -39,6 +47,19 @@ class _CGroup(ctypes.Structure):
     _fields_ = [
         ("parent_idx", ctypes.c_size_t),
         ("kind", ctypes.c_uint8),
+        ("member_start", ctypes.c_size_t),
+        ("member_count", ctypes.c_size_t),
+    ]
+
+
+_NO_MAX = 0xFFFFFFFF  # capi.zig's `no_max` sentinel for `[min..*]`
+
+
+class _CCardinalityGroup(ctypes.Structure):
+    _fields_ = [
+        ("parent_idx", ctypes.c_size_t),
+        ("min", ctypes.c_uint32),
+        ("max", ctypes.c_uint32),
         ("member_start", ctypes.c_size_t),
         ("member_count", ctypes.c_size_t),
     ]
@@ -104,8 +125,13 @@ def _load_lib():
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.c_size_t,
+        ctypes.POINTER(_CCardinalityGroup),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char_p),
         ctypes.c_size_t,
+        ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(ctypes.c_size_t),
@@ -128,6 +154,12 @@ def _load_lib():
         ctypes.POINTER(ctypes.c_size_t),
     ]
 
+    lib.uvl_is_non_boolean_threatening.restype = ctypes.c_uint8
+    lib.uvl_is_non_boolean_threatening.argtypes = [
+        ctypes.POINTER(_CNonBooleanCounts),
+        ctypes.c_uint8,
+    ]
+
     lib.uvl_dimacs_to_uvl.restype = ctypes.c_int32
     lib.uvl_dimacs_to_uvl.argtypes = [
         ctypes.c_char_p,
@@ -135,7 +167,11 @@ def _load_lib():
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_uint8,
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(ctypes.c_size_t),
     ]
 
@@ -157,39 +193,26 @@ def _check(lib, rc):
         raise ValueError(lib.uvl_last_error().decode("utf-8"))
 
 
-def _parse_dimacs(data: bytes):
-    """DIMACS bytes -> (clauses: list[list[int]], id_to_name: dict[int, str])."""
-    clauses = []
-    id_to_name = {}
-    for line in data.split(b"\n"):
-        if not line:
-            continue
-        if line.startswith(b"c "):
-            _, ident, name = line.decode("utf-8").split(" ", 2)
-            id_to_name[int(ident)] = name
-        elif line.startswith(b"p ") or not line.strip():
-            continue
-        else:
-            lits = [int(x) for x in line.split() if x != b"0"]
-            clauses.append(lits)
-    return clauses, id_to_name
-
-
-def _take_dimacs_buffer(lib, out_ptr, out_len):
+def _take_buffer(lib, out_ptr, out_len):
     try:
-        return _parse_dimacs(ctypes.string_at(out_ptr, out_len.value))
+        return ctypes.string_at(out_ptr, out_len.value)
     finally:
         lib.uvl_free_buffer(out_ptr, out_len)
 
 
 def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = False):
-    """Full pipeline: UVL source text -> (clauses, id_to_name, non_boolean).
+    """Full pipeline: UVL source text -> (non_boolean, raw_dimacs).
+
+    `raw_dimacs` is zig's own DIMACS bytes (writeDimacs, parser/src/cnf.zig)
+    -- the same bytes `uvl2cnf` writes -- for the caller (uvllang.uvl.UVL)
+    to hand to `pysat.formula.CNF(from_string=...)` directly; this module
+    does not parse DIMACS itself.
 
     `non_boolean` is a dict of counts for constructs above the plain
     Boolean language level (see docs/non_boolean_support.md) -- Zig has
     already printed its own warnings for each of them to stderr by the
-    time this returns; the caller (uvllang.main.UVL) decides whether any
-    of them should also raise.
+    time this returns; the caller decides whether any of them should also
+    raise.
 
     `simplify` gates the global subsumption/SSR-disabled clause-set
     simplification pass (see docs/pipeline_clause_dedup.md) -- off by
@@ -217,8 +240,23 @@ def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = 
         ctypes.byref(non_boolean),
     )
     _check(lib, rc)
-    clauses, id_to_name = _take_dimacs_buffer(lib, out_ptr, out_len)
-    return clauses, id_to_name, non_boolean.as_dict()
+    raw_dimacs = _take_buffer(lib, out_ptr, out_len)
+    return non_boolean.as_dict(), raw_dimacs
+
+
+def is_non_boolean_threatening(non_boolean: dict, conversion: bool = False) -> bool:
+    """True iff `non_boolean` (a dict as returned by parse_source_to_cnf/
+    hierarchy_to_cnf, merged with a caller's own tree-walk counts where
+    applicable) should make to_cnf()/to_dimacs() raise instead of
+    silently continuing. Single source of truth: capi.zig's
+    NonBooleanCounts.isThreatening (parser/src/pipeline.zig), shared with
+    the `uvl2cnf --strict` CLI flag.
+    """
+    lib = _get_lib()
+    counts = _CNonBooleanCounts(**non_boolean)
+    return bool(
+        lib.uvl_is_non_boolean_threatening(ctypes.byref(counts), 1 if conversion else 0)
+    )
 
 
 _NO_INDEX = 0xFFFFFFFF
@@ -290,11 +328,15 @@ def _decode_parse_source_full(data: bytes) -> dict:
             key_b.decode("utf-8")
         ] = value_b.decode("utf-8")
 
-    raw_constraints = []
+    boolean_constraints = []
+    arithmetic_constraints = []
     n_constraints, pos = _read_u32(data, pos)
     for _ in range(n_constraints):
         text_b, pos = _read_bytes(data, pos)
-        raw_constraints.append(text_b.decode("utf-8"))
+        is_boolean = data[pos]
+        pos += 1
+        text = text_b.decode("utf-8")
+        (boolean_constraints if is_boolean else arithmetic_constraints).append(text)
 
     return {
         "features": features,
@@ -302,7 +344,8 @@ def _decode_parse_source_full(data: bytes) -> dict:
         "feature_types": feature_types,
         "feature_hierarchy": feature_hierarchy,
         "feature_attributes": feature_attributes,
-        "raw_constraints": raw_constraints,
+        "boolean_constraints": boolean_constraints,
+        "arithmetic_constraints": arithmetic_constraints,
     }
 
 
@@ -321,8 +364,10 @@ def parse_source_full(source: str) -> dict:
                                                             # value (e.g. `abstract`)
                                                             # is omitted, matching
                                                             # Lark/ANTLR
-         "raw_constraints": [text, ...]}       # unclassified -- caller splits
-                                                # into boolean/arithmetic
+         "boolean_constraints": [text, ...],    # already classified by
+         "arithmetic_constraints": [text, ...]} # constraint.zig itself
+                                                 # (c.node != null), not a
+                                                 # Python-side text guess
     """
     lib = _get_lib()
     src_bytes = source.encode("utf-8")
@@ -339,13 +384,22 @@ def parse_source_full(source: str) -> dict:
     return _decode_parse_source_full(data)
 
 
-def source_to_smt(source: str) -> str:
-    """Full pipeline: UVL source text -> SMT-LIB 2 text, via the native
-    writer (parser/src/smt.zig). Unlike parse_source_to_cnf, not
-    restricted to the plain Boolean language level -- numeric
-    comparisons, aggregates, and typed features are all represented.
-    Backs UVL.to_smt() for backend="zig"; the native uvl2smt binary calls
-    the same Zig code directly, without going through Python at all.
+def write_bytes(data: bytes, filepath) -> None:
+    with open(filepath, "wb") as f:
+        f.write(data)
+
+
+def source_to_smt(source: str, filepath=None):
+    """Full pipeline: UVL source text -> SMT-LIB 2, via the native writer
+    (parser/src/smt.zig). Unlike parse_source_to_cnf, not restricted to
+    the plain Boolean language level -- numeric comparisons, aggregates,
+    and typed features are all represented. Backs UVL.to_smt() for
+    backend="zig"; the native uvl2smt binary calls the same Zig code
+    directly, without going through Python at all.
+
+    Returns the text if `filepath` is None; otherwise writes zig's own
+    bytes to `filepath` verbatim (no decode/re-encode round trip) and
+    returns None.
     """
     lib = _get_lib()
     src_bytes = source.encode("utf-8")
@@ -355,14 +409,25 @@ def source_to_smt(source: str) -> str:
         src_bytes, len(src_bytes), ctypes.byref(out_ptr), ctypes.byref(out_len)
     )
     _check(lib, rc)
-    try:
-        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8")
-    finally:
-        lib.uvl_free_buffer(out_ptr, out_len)
+    raw = _take_buffer(lib, out_ptr, out_len)
+    if filepath is None:
+        return raw.decode("utf-8")
+    write_bytes(raw, filepath)
+    return None
 
 
-def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: bool = False):
+def hierarchy_to_cnf(
+    features,
+    root,
+    feature_hierarchy,
+    constraints,
+    simplify: bool = False,
+    conversion: bool = False,
+    cardinality_groups=None,
+):
     """Only the CNF-generation step, on an already-parsed hierarchy.
+    Returns (non_boolean, raw_dimacs) -- see parse_source_to_cnf's
+    docstring.
 
     features: list[str], every feature name (quotes included if quoted).
     root: str | None, the root feature name.
@@ -382,6 +447,14 @@ def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: b
         function only ever sees an already-extracted hierarchy/constraint
         list, never the raw source those depend on; the caller merges in
         its own tree-walk counts for those.
+    conversion: mirrors parse_source_to_cnf's `conversion` flag -- applies
+        the group-cardinality encoding (parser/src/conversion.zig) to
+        `cardinality_groups`. Feature-local constraint attributes need no
+        separate parameter: fold their text into `constraints` before
+        calling this, the same as any other constraint.
+    cardinality_groups: list[(parent, min, max_or_None, [member, ...])],
+        as produced by BaseFeatureModelBuilder.cardinality_groups. Ignored
+        unless conversion=True.
     """
     lib = _get_lib()
 
@@ -416,6 +489,25 @@ def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: b
     c_groups_arr = (_CGroup * len(c_groups))(*c_groups)
     c_members_arr = (ctypes.c_size_t * len(member_indices))(*member_indices)
 
+    cg_member_indices = []
+    c_cardinality_groups = []
+    for parent, min_, max_, members in cardinality_groups or []:
+        start = len(cg_member_indices)
+        cg_member_indices.extend(index[m] for m in members)
+        c_cardinality_groups.append(
+            _CCardinalityGroup(
+                index[parent],
+                min_,
+                _NO_MAX if max_ is None else max_,
+                start,
+                len(members),
+            )
+        )
+    c_cardinality_groups_arr = (_CCardinalityGroup * len(c_cardinality_groups))(
+        *c_cardinality_groups
+    )
+    c_cg_members_arr = (ctypes.c_size_t * len(cg_member_indices))(*cg_member_indices)
+
     cons_bytes = [c.encode("utf-8") for c in constraints]
     cons_arr = (ctypes.c_char_p * len(cons_bytes))(*cons_bytes)
 
@@ -434,16 +526,21 @@ def hierarchy_to_cnf(features, root, feature_hierarchy, constraints, simplify: b
         len(c_groups_arr),
         c_members_arr,
         len(c_members_arr),
+        c_cardinality_groups_arr,
+        len(c_cardinality_groups_arr),
+        c_cg_members_arr,
+        len(c_cg_members_arr),
         cons_arr,
         len(cons_bytes),
         1 if simplify else 0,
+        1 if conversion else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
         ctypes.byref(non_boolean),
     )
     _check(lib, rc)
-    clauses, id_to_name = _take_dimacs_buffer(lib, out_ptr, out_len)
-    return clauses, id_to_name, non_boolean.as_dict()
+    raw_dimacs = _take_buffer(lib, out_ptr, out_len)
+    return non_boolean.as_dict(), raw_dimacs
 
 
 def dimacs_to_uvl(
@@ -451,28 +548,52 @@ def dimacs_to_uvl(
     optimize: bool = False,
     by_name: bool = False,
     infer_propagation: bool = False,
-) -> str:
+    verify: bool = False,
+):
     """CNF -> UVL recovery (any2uvl). `infer_propagation` enables the
     experimental, opt-in propagation-based (unit-propagation/BCP)
     implication recovery pass -- see recovery.zig's
     `augmentGraphWithPropagation` doc comment. Off by default: it's more
     expensive than the default literal-clause-shape matching and is meant
     to be benchmarked before ever being turned on by default.
+
+    `verify` re-parses the recovered text and compares its CNF against
+    the input as an exact clause set, entirely in Zig
+    (recovery.verifyRecovery) -- the same check `any2uvl --verify` runs.
+
+    Returns `(uvl_text, verify_result)`; `verify_result` is `None` unless
+    `verify=True`, else a dict with `total_orig_clauses`/`missing`/`extra`.
     """
     lib = _get_lib()
     out_ptr = ctypes.c_void_p()
     out_len = ctypes.c_size_t()
+    orig_clauses = ctypes.c_size_t()
+    missing = ctypes.c_size_t()
+    extra = ctypes.c_size_t()
     rc = lib.uvl_dimacs_to_uvl(
         dimacs_bytes,
         len(dimacs_bytes),
         1 if optimize else 0,
         1 if by_name else 0,
         1 if infer_propagation else 0,
+        1 if verify else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
+        ctypes.byref(orig_clauses),
+        ctypes.byref(missing),
+        ctypes.byref(extra),
     )
     _check(lib, rc)
+    verify_result = (
+        {
+            "total_orig_clauses": orig_clauses.value,
+            "missing": missing.value,
+            "extra": extra.value,
+        }
+        if verify
+        else None
+    )
     try:
-        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8")
+        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8"), verify_result
     finally:
         lib.uvl_free_buffer(out_ptr, out_len)

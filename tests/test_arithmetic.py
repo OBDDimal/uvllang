@@ -4,8 +4,9 @@ Tests for arithmetic constraint parsing and SMT-LIB 2 conversion.
 
 import pytest
 import os
-import tempfile
 from uvllang import UVL
+
+BACKENDS = ["zig", "lark", "antlr"]
 
 
 # Test data for SMT-related example files
@@ -77,19 +78,20 @@ SMT_EXAMPLE_FILES = [
 ]
 
 
-@pytest.mark.parametrize("use_antlr", [False, True])
+@pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize(
     "example", SMT_EXAMPLE_FILES, ids=[e["file"] for e in SMT_EXAMPLE_FILES]
 )
 class TestSMTExamples:
-    """Consolidated tests for SMT example files."""
+    """Consolidated tests for SMT example files, identically across all
+    three backends."""
 
-    def test_parse_and_classify(self, example, use_antlr):
+    def test_parse_and_classify(self, example, backend):
         """Test parsing and constraint classification."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_file=example_file, backend=backend)
 
         # Check features
         assert (
@@ -127,12 +129,12 @@ class TestSMTExamples:
                         model.feature_attributes[feature][attr_name] == attr_value
                     ), f"Expected {feature}.{attr_name} = {attr_value}"
 
-    def test_smt_generation(self, example, use_antlr):
+    def test_smt_generation(self, example, backend):
         """Test SMT-LIB 2 generation."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_file=example_file, backend=backend)
         smt = model.to_smt()
 
         # Check basic structure
@@ -166,7 +168,7 @@ class TestSMTExamples:
             assert "len(" not in smt.lower()
             assert "(str.len " in smt
 
-    def test_z3_solving(self, example, use_antlr):
+    def test_z3_solving(self, example, backend):
         """Test that Z3 produces expected solutions matching our understanding."""
         try:
             from z3 import Solver, sat, unsat
@@ -176,7 +178,7 @@ class TestSMTExamples:
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", example["file"]
         )
-        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_file=example_file, backend=backend)
         smt = model.to_smt()
 
         solver = Solver()
@@ -219,20 +221,17 @@ class TestSMTExamples:
                     ), f"{example['file']}: {str_var} should have length {expected_len}, got {len(val_str)}"
 
 
-@pytest.mark.parametrize("use_antlr", [False, True])
+@pytest.mark.parametrize("backend", BACKENDS)
 class TestSMTQuotingAndSortInference:
-    """Regression tests for two bugs found (via z3) in the shared
-    Lark/ANTLR to_smt() implementation and fixed for parity with the
-    native zig writer (parser/src/smt.zig) -- see uvllang/main.py's
-    _smt_ident/_smt_infer_sort. Both bugs made real example models
-    (berkeleydb.uvl, comments.uvl, automotive01.uvl) produce SMT-LIB that
-    z3 rejected outright; see tests/test_zig_parser.py's
-    test_zig_to_smt_agrees_with_antlr_on_satisfiability."""
+    """Regression tests for quoted-identifier and attribute-sort-inference
+    correctness in to_smt()'s output (parser/src/smt.zig, called for
+    every backend). Real example models (berkeleydb.uvl, comments.uvl,
+    automotive01.uvl) once produced SMT-LIB that z3 rejected outright."""
 
-    def test_quoted_feature_name_is_a_valid_smt_symbol(self, use_antlr):
+    def test_quoted_feature_name_is_a_valid_smt_symbol(self, backend):
         z3 = pytest.importorskip("z3")
         uvl_content = 'features\n    "My Root"\n        optional\n            A\n'
-        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_str=uvl_content, backend=backend)
         smt = model.to_smt()
 
         assert '"My Root"' not in smt
@@ -241,7 +240,7 @@ class TestSMTQuotingAndSortInference:
         solver.from_string(smt)
         assert str(solver.check()) == "sat"
 
-    def test_quoted_name_used_in_a_boolean_constraint(self, use_antlr):
+    def test_quoted_name_used_in_a_boolean_constraint(self, backend):
         """The specific pattern that broke comments.uvl: a quoted name
         used as a constraint operand, not just in a declaration."""
         z3 = pytest.importorskip("z3")
@@ -255,16 +254,16 @@ class TestSMTQuotingAndSortInference:
             "constraints\n"
             '    "weird//name" => C\n'
         )
-        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_str=uvl_content, backend=backend)
         smt = model.to_smt()
         solver = z3.Solver()
         solver.from_string(smt)
         assert str(solver.check()) == "sat"
 
-    def test_string_valued_attribute_declared_as_string_sort(self, use_antlr):
+    def test_string_valued_attribute_declared_as_string_sort(self, backend):
         z3 = pytest.importorskip("z3")
         uvl_content = "features\n    Root {tag 'v1'}\n        optional\n            A\n"
-        model = UVL(from_str=uvl_content, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_str=uvl_content, backend=backend)
         smt = model.to_smt()
 
         assert "(declare-const Root.tag String)" in smt
@@ -273,11 +272,12 @@ class TestSMTQuotingAndSortInference:
         assert str(solver.check()) == "sat"
 
 
-@pytest.mark.parametrize("use_antlr", [False, True])
+@pytest.mark.parametrize("backend", BACKENDS)
 class TestSMTConversion:
-    """Test SMT conversion with inline UVL definitions."""
+    """SMT conversion of inline UVL definitions -- prefix-notation
+    arithmetic and operator precedence."""
 
-    def test_smt_arithmetic_operators(self, use_antlr):
+    def test_smt_arithmetic_operators(self, backend):
         """Test arithmetic operator conversion to prefix notation."""
         uvl_content = """features
     A
@@ -290,24 +290,15 @@ constraints
     B.Price - 5 == 5
     B.Fun / 2 == 10
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
-            f.write(uvl_content)
-            temp_file = f.name
+        model = UVL(from_str=uvl_content, backend=backend)
+        smt = model.to_smt()
 
-        try:
-            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
-            smt = model.to_smt()
+        assert "(+ B.Price B.Fun)" in smt
+        assert "(* B.Fun 2)" in smt
+        assert "(- B.Price 5)" in smt
+        assert "(/ B.Fun 2)" in smt
 
-            # Check operators are converted to prefix notation
-            assert "(+ B.Price B.Fun)" in smt
-            assert "(* B.Fun 2)" in smt
-            assert "(- B.Price 5)" in smt
-            assert "(/ B.Fun 2)" in smt
-
-        finally:
-            os.unlink(temp_file)
-
-    def test_smt_operator_precedence(self, use_antlr):
+    def test_smt_operator_precedence(self, backend):
         """Test that operator precedence is handled correctly."""
         uvl_content = """features
     A
@@ -318,46 +309,19 @@ constraints
     B.X + B.Y * B.Z == 14
     B.X * B.Y + B.Z == 10
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".uvl", delete=False) as f:
-            f.write(uvl_content)
-            temp_file = f.name
-
-        try:
-            model = UVL(from_file=temp_file, backend="antlr" if use_antlr else "lark")
-            smt = model.to_smt()
-
-            # Check precedence: multiplication before addition
-            assert "(+ B.X (* B.Y B.Z))" in smt
-            assert "(+ (* B.X B.Y) B.Z)" in smt
-
-        finally:
-            os.unlink(temp_file)
-
-    def test_smt_file_output(self, use_antlr):
-        """Test writing SMT to file and reading it back."""
-        example_file = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "expressions.uvl"
-        )
-        model = UVL(from_file=example_file, backend="antlr" if use_antlr else "lark")
+        model = UVL(from_str=uvl_content, backend=backend)
         smt = model.to_smt()
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".smt2", delete=False) as f:
-            f.write(smt)
-            temp_file = f.name
+        # Check precedence: multiplication before addition
+        assert "(+ B.X (* B.Y B.Z))" in smt
+        assert "(+ (* B.X B.Y) B.Z)" in smt
 
-        try:
-            with open(temp_file, "r") as f:
-                content = f.read()
 
-            assert content == smt
-            assert "(check-sat)" in content
-
-        finally:
-            os.unlink(temp_file)
-
+# test_uvllang.py::TestFromCnfAndFileOutputs covers to_smt(filepath) itself
+# (writing to a real path and reading it back); nothing here duplicates that.
 
 # The uvl2smt CLI is now a native Zig binary (parser/zig-out/bin/uvl2smt),
 # not this uvllang.cli.uvl2smt Python entry point (removed -- see
 # uvllang/cli.py's module docstring). See tests/test_zig_smt.py for its
-# coverage; the legacy Lark/ANTLR-backed to_smt() tested elsewhere in this
-# file is still exercised via the Python API directly.
+# coverage; UVL.to_smt() (exercised elsewhere in this file, for every
+# backend) is a ctypes call into the same writer.

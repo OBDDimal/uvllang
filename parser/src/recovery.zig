@@ -13,6 +13,9 @@ const ChildType = builder_mod.ChildType;
 const GroupEntry = builder_mod.GroupEntry;
 const cnf = @import("cnf.zig");
 const subsumption = @import("subsumption.zig");
+const lexer = @import("lexer.zig");
+const parser_mod = @import("parser.zig");
+const constraint = @import("constraint.zig");
 
 fn absLess(_: void, a: i32, b: i32) bool {
     return @abs(a) < @abs(b);
@@ -138,7 +141,7 @@ pub const ParsedDimacs = struct {
     clauses: std.ArrayList([]i32),
 };
 
-pub const ParseDimacsError = error{OutOfMemory};
+pub const ParseDimacsError = error{ OutOfMemory, NoHeader };
 
 /// Parses `c <id> <name>` comments (quoting bare multi-word names for
 /// third-party DIMACS files), the `p cnf <nv> <nc>` header's variable
@@ -147,17 +150,23 @@ pub const ParseDimacsError = error{OutOfMemory};
 /// no `c <id> <name>` comment -- `nv` here is the max of the header's
 /// declared count and every id actually seen (in a comment or a clause
 /// literal), since a hand-written or third-party DIMACS file's header can
-/// undercount or be missing outright. This guarantees every variable the
-/// file could possibly reference has a name, so a fully free/unconstrained
+/// undercount its variable count. This guarantees every variable the file
+/// could possibly reference has a name, so a fully free/unconstrained
 /// variable (no clause, no comment) is never silently invisible to the
 /// caller, and no variable-without-a-comment ever causes an `id_to_name`
 /// lookup to fail downstream.
+///
+/// A `p` line must be present at all -- its absence means this isn't a
+/// DIMACS file (e.g. it's UVL or SMT-LIB text), and returns `NoHeader`
+/// rather than silently parsing whatever numeric-looking lines it finds.
 pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDimacs {
     var id_to_name = std.AutoHashMap(i32, []const u8).init(alloc);
     var name_to_id = std.StringHashMap(i32).init(alloc);
     var clauses = std.ArrayList([]i32).empty;
     var header_nv: i32 = 0;
     var max_seen_id: i32 = 0;
+
+    var saw_header = false;
 
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line_raw| {
@@ -184,6 +193,7 @@ pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDi
         }
 
         if (line[0] == 'p') {
+            saw_header = true;
             var it = std.mem.tokenizeAny(u8, line[1..], " \t");
             _ = it.next(); // "cnf"
             if (it.next()) |nv_str| {
@@ -206,6 +216,8 @@ pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDi
         sortByAbs(owned);
         try clauses.append(alloc, owned);
     }
+
+    if (!saw_header) return ParseDimacsError.NoHeader;
 
     const nv = @max(header_nv, max_seen_id);
     var id: i32 = 1;
@@ -1520,6 +1532,75 @@ pub fn recoverFromParsed(
     return try aw.toOwnedSlice();
 }
 
+pub const VerifyResult = struct {
+    total_orig_clauses: usize,
+    missing: usize,
+    extra: usize,
+
+    pub fn pass(self: VerifyResult) bool {
+        return self.missing == 0 and self.extra == 0;
+    }
+};
+
+/// Re-parses `uvl_text` and compares its CNF against `orig_clauses` as an
+/// exact clause set -- DIMACS input only. Returns counts rather than
+/// printing, so the result is directly assertable in a test or usable by
+/// a ctypes caller; a false FAIL (missing=N, extra=0) is possible after
+/// `--optimize`'s subsumption cleanup -- see any2uvl.zig's usage() text.
+pub fn verifyRecovery(alloc: Allocator, uvl_text: []const u8, orig_clauses: []const []i32) !VerifyResult {
+    const tokens = try lexer.tokenize(alloc, uvl_text);
+    const result = try parser_mod.parseModel(alloc, tokens);
+    var ids = try cnf.assignIds(alloc, &result.builder.features);
+
+    var clauses = std.ArrayList([]i32).empty;
+    if (result.builder.root) |root| {
+        const clause = try alloc.alloc(i32, 1);
+        clause[0] = ids.get(root).?;
+        try clauses.append(alloc, clause);
+    }
+    try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
+
+    for (result.constraints) |info| {
+        const node = info.node orelse continue;
+        const node_clauses = constraint.generateClauses(alloc, &ids, node) catch continue;
+        for (node_clauses) |c| try clauses.append(alloc, c);
+    }
+
+    var orig_set = std.HashMap([]i32, void, SortedClauseCtx, std.hash_map.default_max_load_percentage).init(alloc);
+    for (orig_clauses) |c| try orig_set.put(try sortedCopy(alloc, c), {});
+
+    var result_set = std.HashMap([]i32, void, SortedClauseCtx, std.hash_map.default_max_load_percentage).init(alloc);
+    for (clauses.items) |c| try result_set.put(try sortedCopy(alloc, c), {});
+
+    var missing: usize = 0;
+    var it = orig_set.keyIterator();
+    while (it.next()) |k| {
+        if (!result_set.contains(k.*)) missing += 1;
+    }
+    var extra: usize = 0;
+    var it2 = result_set.keyIterator();
+    while (it2.next()) |k| {
+        if (!orig_set.contains(k.*)) extra += 1;
+    }
+
+    return .{ .total_orig_clauses = orig_set.count(), .missing = missing, .extra = extra };
+}
+
+fn sortedCopy(alloc: Allocator, c: []const i32) ![]i32 {
+    const copy = try alloc.dupe(i32, c);
+    std.mem.sort(i32, copy, {}, std.sort.asc(i32));
+    return copy;
+}
+
+const SortedClauseCtx = struct {
+    pub fn hash(_: SortedClauseCtx, key: []i32) u64 {
+        return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(key));
+    }
+    pub fn eql(_: SortedClauseCtx, a: []i32, b: []i32) bool {
+        return std.mem.eql(i32, a, b);
+    }
+};
+
 test "ratio matches difflib for identical strings" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1607,4 +1688,21 @@ test "Level 2: propagation recovers a multi-clause implication with no literal 2
 
     const implies4 = graph.implies.get(4) orelse return error.TestUnexpectedResult;
     try std.testing.expect(containsI32(implies4.items, 1));
+}
+
+test "parseDimacs rejects input with no `p` header line (e.g. non-DIMACS)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try std.testing.expectError(ParseDimacsError.NoHeader, parseDimacs(alloc, "1 2 0\n-1 0\n"));
+}
+
+test "parseDimacs accepts a header-only, clause-only DIMACS file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseDimacs(alloc, "p cnf 1 1\n1 0\n");
+    try std.testing.expectEqual(@as(usize, 1), parsed.clauses.items.len);
 }
