@@ -53,7 +53,7 @@ uvl2uvl model.uvl -v              # also print feature/constraint counts
 
 ### uvl2smt — UVL to SMT-LIB 2
 
-A native binary (`parser/zig-out/bin/uvl2smt`), unlike `uvl2cnf` not restricted to the plain Boolean level: numeric comparisons, aggregate functions (`sum`/`avg`/`len`/`floor`/`ceil`, including the 2-argument scoped form `sum(Feature, Attr)`), and typed (`String`/`Integer`/`Real`) features are all represented.
+A native binary (`parser/zig-out/bin/uvl2smt`), unlike `uvl2cnf` not restricted to the plain Boolean level: numeric comparisons, aggregate functions (`sum`/`avg`/`len`/`floor`/`ceil`, including the 2-argument scoped form `sum(Feature, Attr)`), and typed (`String`/`Integer`/`Real`) features are all represented. Feature-local `constraint`/`constraints` attributes are always included too (unconditionally, alongside the top-level `constraints` block) — SMT-LIB has no Boolean-only ceiling that would make them need a `--conversion`-style flag the way `uvl2cnf` does.
 
 ```bash
 uvl2smt model.uvl                 # writes model.smt2
@@ -72,15 +72,16 @@ any2uvl model.dimacs              # writes model_recovered.uvl
 any2uvl model.smt2 output.uvl     # SMT-LIB input works the same way
 any2uvl --optimize model.dimacs   # run CTC-reduction optimiser after recovery
 any2uvl --byname model.dimacs     # break hierarchy tie-breaks by feature name similarity
-any2uvl --verify model.dimacs     # reparse the output and confirm DIMACS equivalence (DIMACS input only)
 any2uvl -v model.dimacs           # also print input variable/clause counts and output constraint count
 ```
 
-The `--optimize` pass groups features that share common implied parents and moves them into the hierarchy, reducing cross-tree constraints where valid (verified by DIMACS equivalence check).
+The `--optimize` pass groups features that share common implied parents and moves them into the hierarchy, reducing cross-tree constraints where valid.
 
 `--byname` affects the initial spanning-tree construction: when two candidate parents are at equal depth, the one whose name is most similar to the child (by edit-distance ratio) wins. Combine with `--optimize` for best results.
 
-For SMT-LIB input, a non-Boolean assert (an arithmetic constraint, an attribute-value binding) is preserved as a residual UVL constraint when it has a UVL constraint-syntax equivalent; the small slice that doesn't (`ite`, `to_int`, `str.len` — mainly `uvl2smt`'s own aggregate-function expansions) is dropped with a warning rather than emitted as invalid UVL. `--verify` is DIMACS-only and is skipped (with a warning) for SMT-LIB input.
+For SMT-LIB input, a non-Boolean assert (an arithmetic constraint, an attribute-value binding) is preserved as a residual UVL constraint when it has a UVL constraint-syntax equivalent; the small slice that doesn't (`ite`, `to_int`, `str.len` — mainly `uvl2smt`'s own aggregate-function expansions) is dropped with a warning rather than emitted as invalid UVL.
+
+There used to be an `any2uvl --verify` flag (and a matching `UVL(from_cnf=..., verify=True)`) that re-parsed the output and compared its CNF against the input as an exact clause set. It's removed: that comparison is unsound by construction — a logically equivalent clause set that's merely syntactically different (e.g. after `--optimize`'s subsumption cleanup) reports a false FAIL, so a real defect and a harmless rewrite are indistinguishable without a SAT-based check. `tests/test_recovery_quality.py` verifies recovery correctness properly (SAT-based equivalence via pysat), which is where that kind of check belongs.
 
 ## Python API
 
@@ -100,8 +101,7 @@ model.to_smt("output.smt2")
 # DIMACS -> UVL recovery (any2uvl), as an alternate constructor: from a
 # file path, or directly from a pysat.formula.CNF object
 recovered = UVL(from_cnf="model.dimacs", optimize=True, by_name=True)
-recovered = UVL(from_cnf=cnf, verify=True)
-print(recovered.recovery_result)  # {"total_orig_clauses", "missing", "extra"}
+recovered = UVL(from_cnf=cnf)
 ```
 
 ## Non-Boolean constructs

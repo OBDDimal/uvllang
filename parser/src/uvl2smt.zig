@@ -5,31 +5,18 @@ const smt = @import("smt_writer");
 const term = @import("term");
 
 fn usage(t: term.Style) void {
-    std.debug.print("{s}\n", .{t.bold("usage: uvl2smt <input.uvl> [output.smt2] [options]")});
+    std.debug.print("{s}\n", .{t.bold("Usage: uvl2smt <input.uvl> [output.smt2] [options]")});
     std.debug.print(
         \\
-        \\Converts a UVL feature model to SMT-LIB 2 format. Lexing, parsing,
-        \\and SMT generation all run natively here -- no Python involved.
-        \\Unlike uvl2cnf, this is not restricted to the plain Boolean
-        \\language level: numeric comparisons, aggregate functions
-        \\(sum/avg/len/floor/ceil, including the 2-argument scoped form),
-        \\and typed (String/Integer/Real) features are all represented.
-        \\Feature-local `constraint`/`constraints` attributes are not
-        \\included (matching uvl2cnf's default) -- only the top-level
-        \\`constraints` block is written. If output.smt2 is omitted,
-        \\defaults to <input_basename>.smt2 in the current directory.
+        \\Converts a UVL feature model to SMT-LIB 2 format.
+        \\Unlike uvl2cnf, this is neither restricted to the Boolean language level nor requires conversion.
+        \\Defaults to ./<input_basename>.smt2 if output.smt2 is omitted.
         \\
-        \\options:
+        \\Options:
         \\
     , .{});
-    t.option("-v, --verbose", 17, "print feature/constraint counts");
-    t.option("-h, --help", 17, "show this help");
-    std.debug.print(
-        \\
-        \\Lark/ANTLR-backed SMT generation is available programmatically via
-        \\`UVL(backend="lark"/"antlr").to_smt()` in the Python API.
-        \\
-    , .{});
+    t.option("-v, --verbose", 17, "prints feature/constraint counts");
+    t.option("-h, --help", 17, "shows this help");
 }
 
 fn basename(path: []const u8) []const u8 {
@@ -100,7 +87,11 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     if (verbose) {
-        t.stat("Parsed {d} feature(s), {d} constraint(s)", .{ result.builder.features.count(), result.constraints.len });
+        t.stat("Parsed {d} feature(s), {d} constraint(s) ({d} feature-local)", .{
+            result.builder.features.count(),
+            result.constraints.len + result.builder.feature_local_constraints.items.len,
+            result.builder.feature_local_constraints.items.len,
+        });
     }
 
     var out_file = std.Io.Dir.cwd().createFile(io, out_file_name, .{}) catch |err| {

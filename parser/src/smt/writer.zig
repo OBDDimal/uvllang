@@ -443,6 +443,14 @@ pub fn writeSmt(alloc: Allocator, w: *std.Io.Writer, result: *const parser.Parse
             if (!attr_sorts.contains(k.*)) try attr_sorts.put(k.*, "Int");
         }
     }
+    for (b.feature_local_constraints.items) |flc| {
+        var referenced = std.StringHashMap(void).init(alloc);
+        try collectDottedFromNode(&referenced, flc.full);
+        var it = referenced.keyIterator();
+        while (it.next()) |k| {
+            if (!attr_sorts.contains(k.*)) try attr_sorts.put(k.*, "Int");
+        }
+    }
     for (b.ordered_features.items) |name| {
         const info = b.hierarchy.get(name).?;
         for (info.attributes.items) |a| {
@@ -521,6 +529,22 @@ pub fn writeSmt(alloc: Allocator, w: *std.Io.Writer, result: *const parser.Parse
         }
     }
 
+    // Feature-local `constraint`/`constraints` attributes: unrestricted
+    // SMT-LIB has no Boolean-only ceiling to fall back on for these (unlike
+    // uvl2cnf, which needs --conversion to extract them at all), so they're
+    // always written -- same unconditional-assert treatment as top-level
+    // constraints, matching uvl2cnf --conversion's semantics of folding
+    // them in as ordinary constraints rather than scoping them to the
+    // owning feature's selection.
+    if (b.feature_local_constraints.items.len > 0) {
+        try w.writeAll("\n; Feature-local constraint attributes\n");
+        for (b.feature_local_constraints.items) |flc| {
+            try w.writeAll("(assert ");
+            try writeNode(alloc, w, b, flc.full);
+            try w.writeAll(")\n");
+        }
+    }
+
     try w.writeAll("\n(check-sat)\n(get-model)\n");
 }
 
@@ -560,6 +584,30 @@ test "simple hierarchy + boolean constraint" {
     try std.testing.expect(std.mem.indexOf(u8, text, "(assert (=> B Root))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "(assert (=> A B))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "(check-sat)") != null);
+}
+
+test "feature-local constraint attribute is always written, unlike uvl2cnf's default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\features
+        \\    Root
+        \\        optional
+        \\            A {constraint B}
+        \\            B
+        \\
+    ;
+    const result = try buildResult(alloc, src);
+    try std.testing.expectEqual(@as(usize, 1), result.builder.feature_local_constraints.items.len);
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    try writeSmt(alloc, &aw.writer, &result);
+    const text = aw.written();
+
+    try std.testing.expect(std.mem.indexOf(u8, text, "; Feature-local constraint attributes") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "(assert B)") != null);
 }
 
 test "typed feature comparison uses the _val companion const" {

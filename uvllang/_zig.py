@@ -21,8 +21,7 @@ raw_dimacs)` -- `raw_dimacs` is zig's own DIMACS bytes verbatim
 (writeDimacs, parser/src/cnf/cnf.zig); this module does not parse DIMACS
 itself, `UVL.to_cnf`/`UVL.to_dimacs` hand the bytes straight to
 `pysat.formula.CNF`. `parse_source_full` returns a dict, see its
-docstring. `dimacs_to_uvl` returns `(uvl_text, verify_result)`, see its
-docstring.
+docstring. `dimacs_to_uvl` returns the recovered UVL text.
 """
 
 import ctypes
@@ -184,12 +183,7 @@ def _load_lib():
         ctypes.c_size_t,
         ctypes.c_uint8,
         ctypes.c_uint8,
-        ctypes.c_uint8,
-        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
-        ctypes.POINTER(ctypes.c_size_t),
-        ctypes.POINTER(ctypes.c_size_t),
-        ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(ctypes.c_size_t),
     ]
 
@@ -565,53 +559,32 @@ def dimacs_to_uvl(
     dimacs_bytes: bytes,
     optimize: bool = False,
     by_name: bool = False,
-    infer_propagation: bool = False,
-    verify: bool = False,
 ):
-    """CNF -> UVL recovery (any2uvl). `infer_propagation` enables the
-    experimental, opt-in propagation-based (unit-propagation/BCP)
-    implication recovery pass -- see recovery.zig's
-    `augmentGraphWithPropagation` doc comment. Off by default: it's more
-    expensive than the default literal-clause-shape matching and is meant
-    to be benchmarked before ever being turned on by default.
+    """CNF -> UVL recovery (any2uvl). Returns the recovered UVL text.
 
-    `verify` re-parses the recovered text and compares its CNF against
-    the input as an exact clause set, entirely in Zig
-    (recovery.verifyRecovery) -- the same check `any2uvl --verify` runs.
-
-    Returns `(uvl_text, verify_result)`; `verify_result` is `None` unless
-    `verify=True`, else a dict with `total_orig_clauses`/`missing`/`extra`.
+    There used to be a `verify=True` option here (and on `any2uvl
+    --verify`) that re-parsed the recovered text and compared its CNF
+    against the input as an exact clause set. It's gone: an exact
+    clause-set comparison is the wrong check to begin with -- a
+    logically equivalent (but syntactically different) clause set,
+    e.g. after `optimize=True`'s subsumption cleanup, reports a false
+    FAIL, so it was unreliable by construction. Real recovery-quality
+    checks (SAT-based equivalence via z3/pysat) live in
+    tests/test_recovery_quality.py instead.
     """
     lib = _get_lib()
     out_ptr = ctypes.c_void_p()
     out_len = ctypes.c_size_t()
-    orig_clauses = ctypes.c_size_t()
-    missing = ctypes.c_size_t()
-    extra = ctypes.c_size_t()
     rc = lib.uvl_dimacs_to_uvl(
         dimacs_bytes,
         len(dimacs_bytes),
         1 if optimize else 0,
         1 if by_name else 0,
-        1 if infer_propagation else 0,
-        1 if verify else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
-        ctypes.byref(orig_clauses),
-        ctypes.byref(missing),
-        ctypes.byref(extra),
     )
     _check(lib, rc)
-    verify_result = (
-        {
-            "total_orig_clauses": orig_clauses.value,
-            "missing": missing.value,
-            "extra": extra.value,
-        }
-        if verify
-        else None
-    )
     try:
-        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8"), verify_result
+        return ctypes.string_at(out_ptr, out_len.value).decode("utf-8")
     finally:
         lib.uvl_free_buffer(out_ptr, out_len)

@@ -4,28 +4,21 @@ const smt_reader = @import("smt_reader");
 const term = @import("term");
 
 fn usage(t: term.Style) void {
-    std.debug.print("{s}\n", .{t.bold("usage: any2uvl <input.dimacs|input.smt2> [output.uvl] [options]")});
+    std.debug.print("{s}\n", .{t.bold("Usage: any2uvl <input.dimacs|input.smt2> [output.uvl] [options]")});
     std.debug.print(
         \\
         \\Recovers a UVL feature model from a DIMACS CNF file or an SMT-LIB 2
-        \\file (the dialect uvl2smt itself writes -- not general SMT-LIB 2;
-        \\see parser/src/smt/reader.zig). Input format is detected from content,
-        \\not the file extension. Lexing, parsing, and recovery all run
-        \\natively here -- no Python involved. If output.uvl is omitted,
-        \\defaults to <input_basename>_recovered.uvl in the current directory.
+        \\file (the dialect uvl2smt itself writes, not general SMT-LIB 2).
+        \\Defaults to ./<input_basename>_recovered.uvl if output.uvl is omitted.S
         \\
-        \\options:
+        \\Options:
         \\
     , .{});
-    t.option("-v, --verbose", 17, "print variable/clause/constraint counts");
-    t.option("-h, --help", 17, "show this help");
+    t.option("-v, --verbose", 17, "prints variable/clause/constraint counts");
+    t.option("-h, --help", 17, "shows this help");
     t.option("--optimize", 17, "greedy CTC-reduction pass after initial recovery");
-    t.option("--byname", 17, "break parent ties by feature-name similarity");
+    t.option("--byname", 17, "breaks parent ties by feature-name similarity");
     std.debug.print("  {s:<17}(only affects {s})\n", .{ "", t.flag("--optimize") });
-    t.option("--verify", 17, "confirm the output round-trips to an equivalent");
-    t.option("", 17, "CNF (DIMACS input only; see below)");
-    t.option("--propagate", 17, "experimental unit-propagation-based implication");
-    t.option("", 17, "recovery (see recovery.zig)");
     std.debug.print(
         \\
         \\Hierarchy is reconstructed via a spanning-tree heuristic over the
@@ -34,22 +27,6 @@ fn usage(t: term.Style) void {
         \\formula over declared features) become cross-tree constraints. The
         \\output is always logically equivalent to the input regardless of
         \\hierarchy-recovery quality.
-        \\
-        \\
-    , .{});
-    std.debug.print("{s}", .{t.flag("--verify")});
-    std.debug.print(
-        \\ reparses the written UVL and confirms it round-trips to
-        \\an exact-clause-set-equivalent CNF. Combined with
-    , .{});
-    std.debug.print(" {s}", .{t.flag("--optimize")});
-    std.debug.print(
-        \\, a
-        \\FAIL(missing=N, extra=0) result can be a false positive (the
-        \\optimizer's subsumption cleanup can legitimately shrink the
-        \\clause set to a logically-but-not-syntactically-equivalent
-        \\subset) -- a real defect vs. this pattern can only be told apart
-        \\with a SAT-based check, which this binary doesn't perform.
         \\
     , .{});
 }
@@ -126,8 +103,6 @@ pub fn main(init: std.process.Init) !u8 {
     var out_path: ?[]const u8 = null;
     var optimize = false;
     var by_name = false;
-    var verify = false;
-    var propagate = false;
     var verbose = false;
 
     for (args[1..]) |arg| {
@@ -140,10 +115,6 @@ pub fn main(init: std.process.Init) !u8 {
             optimize = true;
         } else if (std.mem.eql(u8, arg, "--byname")) {
             by_name = true;
-        } else if (std.mem.eql(u8, arg, "--verify")) {
-            verify = true;
-        } else if (std.mem.eql(u8, arg, "--propagate")) {
-            propagate = true;
         } else if (in_path == null) {
             in_path = arg;
         } else if (out_path == null) {
@@ -190,11 +161,11 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     const out_text = switch (format) {
-        .dimacs => recovery.recover(alloc, alloc, source, optimize, by_name, propagate) catch |err| {
+        .dimacs => recovery.recover(alloc, alloc, source, optimize, by_name) catch |err| {
             t.err("recovery failed: {t}", .{err});
             return 1;
         },
-        .smtlib => smt_reader.recoverFromSmt(alloc, alloc, source, optimize, by_name, propagate) catch |err| {
+        .smtlib => smt_reader.recoverFromSmt(alloc, alloc, source, optimize, by_name) catch |err| {
             t.err("recovery failed: {t}", .{err});
             return 1;
         },
@@ -215,36 +186,8 @@ pub fn main(init: std.process.Init) !u8 {
     }
     t.success("Saved UVL to {s}", .{out_file_name});
 
-    if (verify) {
-        if (format == .dimacs) {
-            const parsed = recovery.parseDimacs(alloc, source) catch |err| {
-                t.err("could not re-parse input for {s}: {t}", .{ t.flag("--verify"), err });
-                return 1;
-            };
-            const vr = try recovery.verifyRecovery(alloc, out_text, parsed.clauses.items);
-            if (vr.pass()) {
-                t.success("any2uvl: DIMACS PASS ({d} clauses)", .{vr.total_orig_clauses});
-            } else {
-                t.err("any2uvl: DIMACS check FAIL: missing={d} extra={d}", .{ vr.missing, vr.extra });
-                if (optimize and vr.extra == 0) {
-                    std.debug.print(
-                        "  Note: {s}'s residual-CTC subsumption cleanup can legitimately\n" ++
-                        "  make the recovered clause set a syntactically smaller, logically\n" ++
-                        "  equivalent subset (missing>0, extra=0 is this pattern) -- this exact\n" ++
-                        "  clause-set check can't tell that apart from a real defect without a\n" ++
-                        "  SAT solver; see recovery.verifyRecovery's doc comment.\n",
-                        .{t.flag("--optimize")},
-                    );
-                }
-            }
-        } else {
-            t.warn("{s} is not supported for SMT-LIB input; skipped", .{t.flag("--verify")});
-        }
-    }
-
     return 0;
 }
-
 
 test "sniffFormat: DIMACS header and comment lines" {
     try std.testing.expectEqual(Format.dimacs, sniffFormat("p cnf 2 2\n1 0\n"));
@@ -262,42 +205,4 @@ test "sniffFormat: empty or all-comment input defaults to dimacs" {
     try std.testing.expectEqual(Format.dimacs, sniffFormat(""));
     try std.testing.expectEqual(Format.dimacs, sniffFormat("   \n  "));
     try std.testing.expectEqual(Format.dimacs, sniffFormat("; only a comment\n"));
-}
-
-test "verifyRecovery: matching hierarchy reports zero missing/extra" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // Same ids/clauses a real uvl2cnf-produced DIMACS + its any2uvl
-    // recovery would agree on: A=1, Root=2 (alphabetical).
-    var clauses = std.ArrayList([]i32).empty;
-    try clauses.append(alloc, try alloc.dupe(i32, &[_]i32{2}));
-    try clauses.append(alloc, try alloc.dupe(i32, &[_]i32{ -1, 2 }));
-
-    const uvl_text = "features\n    Root\n        optional\n            A\n";
-    const result = try recovery.verifyRecovery(alloc, uvl_text, clauses.items);
-    try std.testing.expect(result.pass());
-    try std.testing.expectEqual(@as(usize, 2), result.total_orig_clauses);
-    try std.testing.expectEqual(@as(usize, 0), result.missing);
-    try std.testing.expectEqual(@as(usize, 0), result.extra);
-}
-
-test "verifyRecovery: a genuinely different hierarchy reports missing/extra" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // Original said A was mandatory (-1 2 AND -2 1); recovered text below
-    // only has A optional (-1 2) -- the mandatory direction is missing.
-    var clauses = std.ArrayList([]i32).empty;
-    try clauses.append(alloc, try alloc.dupe(i32, &[_]i32{2}));
-    try clauses.append(alloc, try alloc.dupe(i32, &[_]i32{ -1, 2 }));
-    try clauses.append(alloc, try alloc.dupe(i32, &[_]i32{ -2, 1 }));
-
-    const uvl_text = "features\n    Root\n        optional\n            A\n";
-    const result = try recovery.verifyRecovery(alloc, uvl_text, clauses.items);
-    try std.testing.expect(!result.pass());
-    try std.testing.expectEqual(@as(usize, 1), result.missing);
-    try std.testing.expectEqual(@as(usize, 0), result.extra);
 }

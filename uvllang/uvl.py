@@ -51,11 +51,8 @@ class UVL:
     (any2uvl, entirely in Zig) -- either a DIMACS file path, or a
     pysat.formula.CNF-like object (anything with .to_dimacs()). The
     recovered UVL text is then parsed like from_str, on whichever backend
-    was requested. optimize/by_name/infer_propagation/verify are
-    recovery-quality knobs, only meaningful with from_cnf (see
-    uvllang._zig.dimacs_to_uvl); when verify=True, the exact-clause-set
-    comparison result is available afterwards as `.recovery_result`
-    (a dict with total_orig_clauses/missing/extra, or None otherwise).
+    was requested. optimize/by_name are recovery-quality knobs, only
+    meaningful with from_cnf (see uvllang._zig.dimacs_to_uvl).
 
     to_cnf()/to_dimacs() support only the Boolean language level
     (README.md#non-boolean-constructs) and raise NonBooleanConstructError if
@@ -84,8 +81,6 @@ class UVL:
         conversion=False,
         optimize=False,
         by_name=False,
-        infer_propagation=False,
-        verify=False,
     ):
         sources = [s for s in (from_file, from_str, from_cnf) if s is not None]
         if len(sources) != 1:
@@ -93,24 +88,19 @@ class UVL:
                 "Exactly one of from_file, from_str, or from_cnf is required"
             )
 
-        self.recovery_result = None
         if from_cnf is not None:
             if isinstance(from_cnf, (str, os.PathLike)):
                 with open(from_cnf, "rb") as f:
                     dimacs_bytes = f.read()
             else:
                 dimacs_bytes = from_cnf.to_dimacs().encode("utf-8")
-            from_str, self.recovery_result = _zig.dimacs_to_uvl(
+            from_str = _zig.dimacs_to_uvl(
                 dimacs_bytes,
                 optimize=optimize,
                 by_name=by_name,
-                infer_propagation=infer_propagation,
-                verify=verify,
             )
-        elif optimize or by_name or infer_propagation or verify:
-            raise ValueError(
-                "optimize/by_name/infer_propagation/verify only apply to from_cnf"
-            )
+        elif optimize or by_name:
+            raise ValueError("optimize/by_name only apply to from_cnf")
 
         if backend is None:
             backend = "antlr" if use_antlr else "zig"

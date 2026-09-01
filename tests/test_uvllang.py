@@ -661,7 +661,7 @@ class TestFromCnfAndFileOutputs:
 
     def test_recovery_kwargs_require_from_cnf(self):
         with pytest.raises(ValueError):
-            UVL(from_str=self.UVL_SOURCE, verify=True)
+            UVL(from_str=self.UVL_SOURCE, optimize=True)
 
     def test_from_file_rejects_non_uvl_content(self, tmp_path):
         bad = tmp_path / "bad.uvl"
@@ -704,20 +704,6 @@ class TestFromCnfAndFileOutputs:
         bad.write_text("1 2 0\n-1 0\n")
         with pytest.raises(ValueError):
             UVL(from_cnf=str(bad))
-
-    def test_from_cnf_verify_reports_a_clean_pass(self):
-        model = UVL(from_str=self.UVL_SOURCE)
-        recovered = UVL(from_cnf=model.to_cnf(), verify=True)
-        assert recovered.recovery_result == {
-            "total_orig_clauses": len(model.to_cnf().clauses),
-            "missing": 0,
-            "extra": 0,
-        }
-
-    def test_from_cnf_without_verify_leaves_recovery_result_none(self):
-        model = UVL(from_str=self.UVL_SOURCE)
-        recovered = UVL(from_cnf=model.to_cnf())
-        assert recovered.recovery_result is None
 
     def test_from_cnf_result_usable_on_any_backend(self):
         model = UVL(from_str=self.UVL_SOURCE)

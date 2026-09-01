@@ -539,54 +539,24 @@ export fn uvl_hierarchy_to_cnf(
 }
 
 /// CNF -> UVL recovery (any2uvl). `optimize`/`by_name` gate the greedy
-/// CTC-reduction pass and its name-similarity parent tie-break;
-/// `infer_propagation` gates the experimental, opt-in propagation-based
-/// implication recovery (see recovery.zig's `augmentGraphWithPropagation`
-/// doc comment); see recovery.zig for the full algorithm.
-/// `do_verify`, if nonzero, re-parses the recovered text and compares its
-/// CNF against the input as an exact clause set (recovery.verifyRecovery
-/// -- the same check any2uvl's `--verify` runs), writing the result into
-/// `out_orig_clauses`/`out_missing`/`out_extra` rather than requiring the
-/// Python caller to redo that comparison itself. All three are set to 0
-/// when `do_verify` is 0.
+/// CTC-reduction pass and its name-similarity parent tie-break; see
+/// recovery.zig for the full algorithm.
 export fn uvl_dimacs_to_uvl(
     dimacs_ptr: [*]const u8,
     dimacs_len: usize,
     optimize: u8,
     by_name: u8,
-    infer_propagation: u8,
-    do_verify: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
-    out_orig_clauses: *usize,
-    out_missing: *usize,
-    out_extra: *usize,
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
 
-    const text = recovery.recover(alloc, gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0, infer_propagation != 0) catch |err| {
+    const text = recovery.recover(alloc, gpa, dimacs_ptr[0..dimacs_len], optimize != 0, by_name != 0) catch |err| {
         setError("uvl_dimacs_to_uvl: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
-
-    out_orig_clauses.* = 0;
-    out_missing.* = 0;
-    out_extra.* = 0;
-    if (do_verify != 0) {
-        const parsed = recovery.parseDimacs(alloc, dimacs_ptr[0..dimacs_len]) catch |err| {
-            setError("uvl_dimacs_to_uvl: --verify: {t}", .{err});
-            return @intFromEnum(statusForError(err));
-        };
-        const vr = recovery.verifyRecovery(alloc, text, parsed.clauses.items) catch |err| {
-            setError("uvl_dimacs_to_uvl: --verify: {t}", .{err});
-            return @intFromEnum(statusForError(err));
-        };
-        out_orig_clauses.* = vr.total_orig_clauses;
-        out_missing.* = vr.missing;
-        out_extra.* = vr.extra;
-    }
 
     out_ptr.* = text.ptr;
     out_len.* = text.len;

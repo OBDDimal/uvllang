@@ -33,10 +33,28 @@ _SIMPLE_UVL = "features\n\tRoot\n\t\tmandatory\n\t\t\tA\n"
 
 
 def _emscripten_sysroot():
-    if shutil.which("em-config") is None:
+    """Locates Emscripten via pyodide-build's own xbuildenv, the same way
+    `pyodide build` (and setup.py's PYODIDE=1 path, run from inside that
+    build) find it -- pyodide-build manages a private, correctly-pinned
+    Emscripten under ~/.cache/pyodide-build/... (installed via `pyodide
+    xbuildenv install-emscripten`), entirely independent of the outer
+    shell's PATH. A bare `shutil.which("em-config")` finds nothing here
+    (it's never put on PATH outside of a `pyodide build` subprocess) even
+    when Emscripten is fully installed and working -- see README.md
+    #pyodide--webassembly.
+    """
+    if shutil.which("pyodide") is None:
+        return None
+    emscripten_dir = subprocess.run(
+        ["pyodide", "config", "get", "emscripten_dir"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    em_config = os.path.join(emscripten_dir, "em-config")
+    if not emscripten_dir or not os.path.exists(em_config):
         return None
     cache = subprocess.run(
-        ["em-config", "CACHE"], check=True, capture_output=True, text=True
+        [em_config, "CACHE"], check=True, capture_output=True, text=True
     ).stdout.strip()
     return os.path.join(cache, "sysroot")
 

@@ -354,7 +354,6 @@ pub fn recoverFromSmt(
     smt_text: []const u8,
     optimize: bool,
     by_name: bool,
-    infer_propagation: bool,
 ) ![]const u8 {
     const parsed_smt = try parseSmt(scratch_alloc, smt_text);
     return recovery.recoverFromParsed(
@@ -363,7 +362,6 @@ pub fn recoverFromSmt(
         parsed_smt.parsed,
         optimize,
         by_name,
-        infer_propagation,
         parsed_smt.extra_constraints,
     );
 }
@@ -398,7 +396,7 @@ test "hierarchy recovered from SMT-LIB round-trips through recoverFromParsed" {
         \\(get-model)
         \\
     ;
-    const out = try recoverFromSmt(alloc, alloc, smt, false, false, false);
+    const out = try recoverFromSmt(alloc, alloc, smt, false, false);
     try std.testing.expect(std.mem.indexOf(u8, out, "Root") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "mandatory") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "A") != null);
@@ -417,7 +415,7 @@ test "non-boolean assert becomes a residual constraint, not lost" {
         \\(check-sat)
         \\
     ;
-    const out = try recoverFromSmt(alloc, alloc, smt, false, false, false);
+    const out = try recoverFromSmt(alloc, alloc, smt, false, false);
     try std.testing.expect(std.mem.indexOf(u8, out, "constraints") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Root.Power == 10") != null);
 }
@@ -436,7 +434,7 @@ test "an unsupported ite-involving assert is dropped, not emitted as invalid UVL
         \\(check-sat)
         \\
     ;
-    const out = try recoverFromSmt(alloc, alloc, smt, false, false, false);
+    const out = try recoverFromSmt(alloc, alloc, smt, false, false);
     try std.testing.expect(std.mem.indexOf(u8, out, "ite") == null);
 }
 

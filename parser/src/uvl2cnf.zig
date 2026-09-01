@@ -7,57 +7,39 @@ const pipeline = @import("pipeline");
 const term = @import("term");
 
 fn usage(t: term.Style) void {
-    std.debug.print("{s}\n", .{t.bold("usage: uvl2cnf <input.uvl> [output.dimacs] [options]")});
+    std.debug.print("{s}\n", .{t.bold("Usage: uvl2cnf <input.uvl> [output.dimacs] [options]")});
     std.debug.print(
         \\
-        \\Converts a UVL feature model to CNF in DIMACS format. Lexing,
-        \\parsing, CNF generation, and writing the output all run natively
-        \\here -- no Python involved. If output.dimacs is omitted, defaults
-        \\to <input_basename>.dimacs in the current directory.
+        \\Converts a UVL feature model to CNF in DIMACS format. 
+        \\Defaults to ./<input_basename>.dimacs if output.dimacs is omitted.
         \\
-        \\options:
+        \\Options:
         \\
     , .{});
-    t.option("-v, --verbose", 17, "print feature/constraint/clause counts");
-    t.option("-h, --help", 17, "show this help");
-    t.option("--simplify", 17, "remove redundant/subsumed clauses (see below)");
-    t.option("--conversion", 17, "convert group cardinality + feature-local");
-    t.option("", 17, "constraint attributes instead of dropping them");
-    t.option("--loud", 17, "exit with an error instead of only warning");
-    t.option("", 17, "when a construct above the Boolean language");
-    t.option("", 17, "level would be dropped (see below)");
+    t.option("-v, --verbose", 17, "prints statistics");
+    t.option("-h, --help", 17, "shows this help");
+    t.option("--simplify", 17, "removes redundant/subsumed clauses");
+    t.option("--conversion", 17, "converts some non-Boolean constructs instead of dropping them");
+    t.option("--loud", 17, "exits with an error instead of warnings when dropping non-Boolean constructs");
     std.debug.print("\n{s}", .{t.flag("--simplify")});
     std.debug.print(
         \\ runs a global subsumption-elimination pass over the
-        \\full clause set (hierarchy + constraints) before writing it out,
-        \\removing redundant/subsumed clauses at the cost of extra runtime
-        \\on large models.
+        \\ full clause set (hierarchy + constraints) before writing it out,
+        \\ removing redundant/subsumed clauses
         \\
         \\
     , .{});
     std.debug.print("{s}", .{t.flag("--conversion")});
     std.debug.print(
-        \\ applies the UVLParser paper's (Sundermann et al.,
-        \\SPLC'23) conversion strategies instead of silently dropping two
-        \\above-Boolean constructs: group cardinality ([i..j] groups) is
-        \\encoded as enumerated Boolean clauses, and feature-local
-        \\`constraint`/`constraints` attributes are extracted as ordinary
-        \\constraints. Feature cardinality (clone multiplicity) is not yet
-        \\covered -- see README.md#non-boolean-constructs.
+        \\ applies some conversion strategies (Sundermann et al., SPLC'23) instead of dropping
+        \\ non-Boolean constructs and constraints. See README.md#non-boolean-constructs for details.
         \\
         \\
     , .{});
     std.debug.print("{s}", .{t.flag("--loud")});
     std.debug.print(
-        \\ refuses to write a CNF that silently drops a construct
-        \\above the Boolean language level (group/feature cardinality,
-        \\feature-local constraint attributes, or a dropped
-        \\attribute-reference/comparison constraint) --
-    , .{});
-    std.debug.print(" {s}\n", .{t.flag("--conversion")});
-    std.debug.print(
-        \\exempts group cardinality and constraint attributes, since those
-        \\are actually handled at that point. The warnings print either way.
+        \\ exits with an error instead of warning that non-Boolean constructs 
+        \\ and constraints are being dropped.
         \\
     , .{});
 }

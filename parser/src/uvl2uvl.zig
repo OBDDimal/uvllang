@@ -8,38 +8,35 @@ const recovery = @import("recovery");
 const term = @import("term");
 
 fn usage(t: term.Style) void {
-    std.debug.print("{s}\n", .{t.bold("usage: uvl2uvl <input.uvl> [output.uvl] [options]")});
+    std.debug.print("{s}\n", .{t.bold("Usage: uvl2uvl <input.uvl> [output.uvl] [options]")});
     std.debug.print(
         \\
         \\Reads a UVL feature model and writes a semantically equivalent UVL
-        \\model back out, preserving the input's feature hierarchy exactly
-        \\(same tree, same groups) while dropping any cross-tree constraint
-        \\that turns out to be redundant given the hierarchy and the other
-        \\constraints. Every surviving constraint is emitted verbatim, in
-        \\its original (not-necessarily-CNF) source form. If output.uvl is
-        \\omitted, defaults to <input_basename>_reduced.uvl in the current
-        \\directory.
+        \\model back out, preserving the input's feature hierarchy while dropping 
+        \\any cross-tree constraint that turns out to be redundant given the hierarchy 
+        \\and the other constraints. Surviving constraints are emitted verbatim, in
+        \\its original form. 
+        \\Defaults to ./<input_basename>_reduced.uvl if output.uvl is omitted.
         \\
-        \\options:
+        \\Options:
         \\
     , .{});
     t.option("-v, --verbose", 17, "print feature/constraint counts");
     t.option("-h, --help", 17, "show this help");
     std.debug.print(
         \\
-        \\A constraint is dropped only when it's *entirely* subsumed away --
-        \\every clause it contributes to the underlying CNF is a superset of
-        \\some other surviving clause -- so this can only shrink the
-        \\constraint list, never rewrite what's kept. Redundancy is checked
-        \\via clause-level subsumption (the same equivalence-preserving pass
-        \\as `uvl2cnf
+        \\A constraint is dropped only when it is entirely subsumed:
+        \\  Every clause it contributes to the underlying CNF is a superset of
+        \\  some other surviving clause, so this can only shrink the
+        \\  constraint list, never rewrite what's kept. Redundancy is checked
+        \\  via clause-level subsumption (the same equivalence-preserving pass
+        \\  as `uvl2cnf
     , .{});
     std.debug.print(" {s}", .{t.flag("--simplify")});
     std.debug.print(
-        \\`), which is sound but not complete: it will
-        \\not catch every semantically redundant constraint, only ones whose
-        \\CNF form is a literal superset of some other clause already
-        \\present. Constraints that reference a feature attribute or a
+        \\`), 
+        \\
+        \\Constraints that reference a feature attribute or a
         \\numeric comparison can't be translated to CNF at all and are
         \\always kept as-is, since their redundancy can't be checked this way.
         \\

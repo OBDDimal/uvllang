@@ -13,9 +13,6 @@ const ChildType = builder_mod.ChildType;
 const GroupEntry = builder_mod.GroupEntry;
 const cnf = @import("cnf");
 const subsumption = @import("subsumption");
-const lexer = @import("lexer");
-const parser_mod = @import("parser");
-const constraint = @import("constraint");
 
 fn absLess(_: void, a: i32, b: i32) bool {
     return @abs(a) < @abs(b);
@@ -330,180 +327,6 @@ pub fn buildGraph(alloc: Allocator, clauses: []const []i32) !Graph {
     }
 
     return .{ .implies = implies, .implied_by = implied_by, .groups = groups };
-}
-
-// ---------------------------------------------------------------------------
-// Level 2 (experimental, opt-in): propagation-based implication recovery
-// ---------------------------------------------------------------------------
-//
-// `buildGraph` above only ever finds a child=>parent edge if the literal
-// 2-literal clause `{-child, parent}` is still present. A global
-// subsumption/simplification pass (see README.md#cnf-clause-set-simplification) can
-// remove that exact clause while leaving the *implication* semantically
-// true (e.g. `parent` turns out to be forced true unconditionally by other
-// clauses, so `{-child, parent}` is subsumed by the unit clause `{parent}`
-// and dropped -- child=>parent still holds, vacuously). This section
-// recovers such edges by checking actual logical entailment via unit
-// propagation (BCP) instead of pattern-matching a literal clause shape:
-// for each candidate feature, assume it selected and propagate; every
-// other feature forced true as a consequence is a genuine (checked, not
-// guessed) implication edge, regardless of which clauses happen to survive
-// syntactically.
-//
-// This is naturally more expensive than the literal-clause scan (one BCP
-// pass per candidate feature, each O(clause literals touched)), so it's
-// gated behind `infer_propagation`, off by default -- see `recover`'s
-// `infer_propagation` parameter and any2uvl's `--propagate` flag. Intended
-// to be benchmarked before ever turning it on by default.
-
-const Occ = std.AutoHashMap(i32, std.ArrayList(usize));
-
-fn occBuild(alloc: Allocator, map: *Occ, lit_var: i32, clause_idx: usize) !void {
-    const l = try getOrPutOcc(map, lit_var);
-    try l.append(alloc, clause_idx);
-}
-
-fn getOrPutOcc(map: *Occ, key: i32) !*std.ArrayList(usize) {
-    const gop = try map.getOrPut(key);
-    if (!gop.found_existing) gop.value_ptr.* = std.ArrayList(usize).empty;
-    return gop.value_ptr;
-}
-
-const PropagationState = struct {
-    remaining: []usize,
-    satisfied: []bool,
-    assigned: []i8, // indexed by var id, 1..nv; 0 = unassigned, 1 = true, -1 = false
-};
-
-/// Runs unit propagation starting from `start`, mutating `state` in place.
-/// Returns the list of variable ids forced *true* during this call
-/// (including any of `start`'s own positive literals), or `null` on a
-/// conflict (the assumption is inconsistent with the rest of the CNF).
-fn propagate(alloc: Allocator, clauses: []const []const i32, pos_occ: *Occ, neg_occ: *Occ, state: *PropagationState, start: []const i32) !?[]i32 {
-    var queue = std.ArrayList(i32).empty;
-    for (start) |lit| {
-        const v: usize = @intCast(@abs(lit));
-        const val: i8 = if (lit > 0) 1 else -1;
-        if (state.assigned[v] != 0) {
-            if (state.assigned[v] != val) return null;
-            continue;
-        }
-        state.assigned[v] = val;
-        try queue.append(alloc, lit);
-    }
-
-    var forced_true = std.ArrayList(i32).empty;
-    var qi: usize = 0;
-    while (qi < queue.items.len) : (qi += 1) {
-        const lit = queue.items[qi];
-        const v: usize = @intCast(@abs(lit));
-        const is_pos = lit > 0;
-        if (is_pos) try forced_true.append(alloc, @intCast(v));
-
-        if ((if (is_pos) pos_occ else neg_occ).getPtr(@intCast(v))) |list| {
-            for (list.items) |ci| state.satisfied[ci] = true;
-        }
-
-        if ((if (is_pos) neg_occ else pos_occ).getPtr(@intCast(v))) |list| {
-            for (list.items) |ci| {
-                if (state.satisfied[ci]) continue;
-                state.remaining[ci] -= 1;
-                if (state.remaining[ci] == 0) return null;
-                if (state.remaining[ci] == 1) {
-                    for (clauses[ci]) |l2| {
-                        const v2: usize = @intCast(@abs(l2));
-                        if (state.assigned[v2] != 0) continue;
-                        state.assigned[v2] = if (l2 > 0) 1 else -1;
-                        try queue.append(alloc, l2);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    return try forced_true.toOwnedSlice(alloc);
-}
-
-/// Augments `graph.implies`/`graph.implied_by` with edges recovered via
-/// unit propagation (see section doc comment above). `nv` bounds the
-/// variable id range to try (every id in `id_to_name`, i.e. every
-/// declared feature per the Level 1 completeness fix in `parseDimacs`).
-pub fn augmentGraphWithPropagation(alloc: Allocator, graph: *Graph, clauses: []const []i32, nv: i32) !void {
-    var pos_occ = Occ.init(alloc);
-    var neg_occ = Occ.init(alloc);
-    for (clauses, 0..) |c, ci| {
-        for (c) |lit| {
-            if (lit > 0) try occBuild(alloc, &pos_occ, lit, ci) else try occBuild(alloc, &neg_occ, -lit, ci);
-        }
-    }
-
-    var base = PropagationState{
-        .remaining = try alloc.alloc(usize, clauses.len),
-        .satisfied = try alloc.alloc(bool, clauses.len),
-        .assigned = try alloc.alloc(i8, @intCast(nv + 1)),
-    };
-    for (clauses, 0..) |c, ci| base.remaining[ci] = c.len;
-    @memset(base.satisfied, false);
-    @memset(base.assigned, 0);
-
-    var units = std.ArrayList(i32).empty;
-    for (clauses) |c| {
-        if (c.len == 1) try units.append(alloc, c[0]);
-    }
-    if (try propagate(alloc, clauses, &pos_occ, &neg_occ, &base, units.items) == null) {
-        return; // base unit set is self-contradictory (CNF is UNSAT); bail out safely, add nothing
-    }
-
-    // Reused scratch buffers for every candidate below: `scratch_alloc` (see
-    // `recover`'s doc comment) is an arena that's only torn down once, at
-    // the very end -- allocating a fresh clause-count-sized copy per
-    // candidate via `alloc.dupe` (the original approach here) is O(nv)
-    // such buffers alive simultaneously, i.e. O(nv * clauses.len) total
-    // memory, which OOM-killed a real run on automotive02v4.uvl (18616
-    // features x ~368K clauses x 3 buffers -> tens of GB). Allocating once
-    // and `@memcpy`-resetting from `base` each iteration keeps this at
-    // O(clauses.len + nv) for the whole function, not per candidate.
-    const remaining = try alloc.alloc(usize, clauses.len);
-    const satisfied = try alloc.alloc(bool, clauses.len);
-    const assigned = try alloc.alloc(i8, @intCast(nv + 1));
-
-    var new_implies = std.AutoHashMap(i32, std.ArrayList(i32)).init(alloc);
-    var id: i32 = 1;
-    while (id <= nv) : (id += 1) {
-        if (base.assigned[@intCast(id)] != 0) continue; // already pinned unconditionally; nothing to learn
-
-        @memcpy(remaining, base.remaining);
-        @memcpy(satisfied, base.satisfied);
-        @memcpy(assigned, base.assigned);
-        var state = PropagationState{ .remaining = remaining, .satisfied = satisfied, .assigned = assigned };
-
-        const forced = try propagate(alloc, clauses, &pos_occ, &neg_occ, &state, &[_]i32{id}) orelse continue;
-        for (forced) |w| {
-            if (w == id) continue;
-            const l = try getOrPutList(&new_implies, id);
-            try setAdd(alloc, l, w);
-        }
-    }
-
-    // Merge into graph.implies (literal-clause edges take precedence
-    // automatically since setAdd is idempotent either way), then rebuild
-    // implied_by from scratch to stay consistent.
-    var nit = new_implies.iterator();
-    while (nit.next()) |entry| {
-        const l = try getOrPutList(&graph.implies, entry.key_ptr.*);
-        for (entry.value_ptr.items) |w| try setAdd(alloc, l, w);
-    }
-
-    var implied_by = std.AutoHashMap(i32, std.ArrayList(i32)).init(alloc);
-    var iit = graph.implies.iterator();
-    while (iit.next()) |entry| {
-        const child = entry.key_ptr.*;
-        for (entry.value_ptr.items) |parent| {
-            const l = try getOrPutList(&implied_by, parent);
-            try setAdd(alloc, l, child);
-        }
-    }
-    graph.implied_by = implied_by;
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,12 +1232,10 @@ pub const RecoverError = error{NoRoot} || Allocator.Error;
 
 /// scratch_alloc is used for intermediate work (freed by the caller
 /// tearing down its arena); out_alloc allocates the returned UVL text so
-/// it survives that teardown. `infer_propagation` gates the experimental
-/// Level 2 propagation-based implication recovery (see the section doc
-/// comment above `augmentGraphWithPropagation`); off by default.
-pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u8, optimize: bool, by_name: bool, infer_propagation: bool) ![]const u8 {
+/// it survives that teardown.
+pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u8, optimize: bool, by_name: bool) ![]const u8 {
     const parsed = try parseDimacs(scratch_alloc, dimacs);
-    return recoverFromParsed(scratch_alloc, out_alloc, parsed, optimize, by_name, infer_propagation, &.{});
+    return recoverFromParsed(scratch_alloc, out_alloc, parsed, optimize, by_name, &.{});
 }
 
 /// Core of `recover()`, taking an already-parsed clause set instead of
@@ -1434,19 +1255,10 @@ pub fn recoverFromParsed(
     parsed: ParsedDimacs,
     optimize: bool,
     by_name: bool,
-    infer_propagation: bool,
     extra_constraints: []const []const u8,
 ) ![]const u8 {
     const alloc = scratch_alloc;
     var graph = try buildGraph(alloc, parsed.clauses.items);
-    if (infer_propagation) {
-        var max_id: i32 = 0;
-        var it = parsed.id_to_name.keyIterator();
-        while (it.next()) |k| {
-            if (k.* > max_id) max_id = k.*;
-        }
-        try augmentGraphWithPropagation(alloc, &graph, parsed.clauses.items, max_id);
-    }
 
     // A unit clause can be negative ("this feature must be unselected"),
     // which isn't a root candidate: there's no feature id to attach to
@@ -1532,75 +1344,6 @@ pub fn recoverFromParsed(
     return try aw.toOwnedSlice();
 }
 
-pub const VerifyResult = struct {
-    total_orig_clauses: usize,
-    missing: usize,
-    extra: usize,
-
-    pub fn pass(self: VerifyResult) bool {
-        return self.missing == 0 and self.extra == 0;
-    }
-};
-
-/// Re-parses `uvl_text` and compares its CNF against `orig_clauses` as an
-/// exact clause set -- DIMACS input only. Returns counts rather than
-/// printing, so the result is directly assertable in a test or usable by
-/// a ctypes caller; a false FAIL (missing=N, extra=0) is possible after
-/// `--optimize`'s subsumption cleanup -- see any2uvl.zig's usage() text.
-pub fn verifyRecovery(alloc: Allocator, uvl_text: []const u8, orig_clauses: []const []i32) !VerifyResult {
-    const tokens = try lexer.tokenize(alloc, uvl_text);
-    const result = try parser_mod.parseModel(alloc, tokens);
-    var ids = try cnf.assignIds(alloc, &result.builder.features);
-
-    var clauses = std.ArrayList([]i32).empty;
-    if (result.builder.root) |root| {
-        const clause = try alloc.alloc(i32, 1);
-        clause[0] = ids.get(root).?;
-        try clauses.append(alloc, clause);
-    }
-    try cnf.hierarchyToCnf(alloc, &result.builder.hierarchy, &ids, &clauses);
-
-    for (result.constraints) |info| {
-        const node = info.node orelse continue;
-        const node_clauses = constraint.generateClauses(alloc, &ids, node) catch continue;
-        for (node_clauses) |c| try clauses.append(alloc, c);
-    }
-
-    var orig_set = std.HashMap([]i32, void, SortedClauseCtx, std.hash_map.default_max_load_percentage).init(alloc);
-    for (orig_clauses) |c| try orig_set.put(try sortedCopy(alloc, c), {});
-
-    var result_set = std.HashMap([]i32, void, SortedClauseCtx, std.hash_map.default_max_load_percentage).init(alloc);
-    for (clauses.items) |c| try result_set.put(try sortedCopy(alloc, c), {});
-
-    var missing: usize = 0;
-    var it = orig_set.keyIterator();
-    while (it.next()) |k| {
-        if (!result_set.contains(k.*)) missing += 1;
-    }
-    var extra: usize = 0;
-    var it2 = result_set.keyIterator();
-    while (it2.next()) |k| {
-        if (!orig_set.contains(k.*)) extra += 1;
-    }
-
-    return .{ .total_orig_clauses = orig_set.count(), .missing = missing, .extra = extra };
-}
-
-fn sortedCopy(alloc: Allocator, c: []const i32) ![]i32 {
-    const copy = try alloc.dupe(i32, c);
-    std.mem.sort(i32, copy, {}, std.sort.asc(i32));
-    return copy;
-}
-
-const SortedClauseCtx = struct {
-    pub fn hash(_: SortedClauseCtx, key: []i32) u64 {
-        return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(key));
-    }
-    pub fn eql(_: SortedClauseCtx, a: []i32, b: []i32) bool {
-        return std.mem.eql(i32, a, b);
-    }
-};
-
 test "ratio matches difflib for identical strings" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1653,41 +1396,6 @@ test "group detection rejects ambiguous multi-parent member sets" {
     try std.testing.expect(graph.groups.contains(1));
     const members = graph.groups.get(1).?;
     try std.testing.expectEqual(@as(usize, 3), members.items.len);
-}
-
-test "Level 2: propagation recovers a multi-clause implication with no literal 2-clause edge" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // Root(3) unit true. A(1)=>Root, B(4)=>Root, C(2)=>Root (structural).
-    // B => not C: {-4,-2}. B => (A or C): {-4,1,2}.
-    // Together: B=>A, with NO literal clause {-4,1} anywhere.
-    var clauses = std.ArrayList([]i32).empty;
-    const c1 = try alloc.dupe(i32, &[_]i32{3});
-    const c2 = try alloc.dupe(i32, &[_]i32{ -1, 3 });
-    const c3 = try alloc.dupe(i32, &[_]i32{ -4, 3 });
-    const c4 = try alloc.dupe(i32, &[_]i32{ -2, 3 });
-    const c5 = try alloc.dupe(i32, &[_]i32{ -4, -2 });
-    const c6 = try alloc.dupe(i32, &[_]i32{ -4, 1, 2 });
-    sortByAbs(c6);
-    try clauses.append(alloc, c1);
-    try clauses.append(alloc, c2);
-    try clauses.append(alloc, c3);
-    try clauses.append(alloc, c4);
-    try clauses.append(alloc, c5);
-    try clauses.append(alloc, c6);
-
-    var graph = try buildGraph(alloc, clauses.items);
-    // Before Level 2: B(4) has no edge to A(1).
-    if (graph.implies.get(4)) |l| {
-        try std.testing.expect(!containsI32(l.items, 1));
-    }
-
-    try augmentGraphWithPropagation(alloc, &graph, clauses.items, 4);
-
-    const implies4 = graph.implies.get(4) orelse return error.TestUnexpectedResult;
-    try std.testing.expect(containsI32(implies4.items, 1));
 }
 
 test "parseDimacs rejects input with no `p` header line (e.g. non-DIMACS)" {
