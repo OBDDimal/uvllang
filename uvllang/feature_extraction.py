@@ -16,7 +16,7 @@ class BaseFeatureExtractor:
         self.arithmetic_constraints = []
         self.feature_types = {}
         self.feature_attributes = {}  # {feature: {attr_name: value}}
-        # Tier 1 counts (docs/non_boolean_support.md).
+        # Tier 1 counts (README.md#non-boolean-constructs).
         self.cardinality_feature_count = 0
         self.constraint_attribute_count = 0
         # Raw text of every feature-local `constraint`/`constraints`
@@ -69,7 +69,7 @@ def _is_arithmetic_constraint(constraint_text):
 
 def _parse_cardinality_range(text):
     """Parses a `[min..max]`/`[min..*]`/`[n]` cardinality token into
-    `(min, max_or_None)`. Mirrors parser.zig's parseCardinalityRange.
+    `(min, max_or_None)`. Mirrors parse/parser.zig's parseCardinalityRange.
     """
     inner = text[1:-1]
     if ".." in inner:
@@ -90,7 +90,7 @@ class BaseFeatureModelBuilder:
         self.feature_stack = []
         self.current_group = None
         self.group_stack = []
-        # Tier 1 (docs/non_boolean_support.md).
+        # Tier 1 (README.md#non-boolean-constructs).
         self.cardinality_group_count = 0
         # [(parent, min, max_or_None, [member, ...]), ...] -- used only
         # when conversion=True (see uvllang._zig.hierarchy_to_cnf).

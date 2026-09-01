@@ -53,6 +53,7 @@ wheels/
 # Zig build artifacts
 zig-out/
 .zig-cache/
+uvllang/_zig_libs/
 
 # LaTeX build artifacts
 *.aux

@@ -30,9 +30,9 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builder_mod = @import("builder.zig");
-const constraint = @import("constraint.zig");
-const parser = @import("parser.zig");
+const builder_mod = @import("builder");
+const constraint = @import("constraint");
+const parser = @import("parser");
 const Builder = builder_mod.Builder;
 
 fn isOptional(b: *const Builder, name: []const u8) bool {
@@ -524,7 +524,7 @@ pub fn writeSmt(alloc: Allocator, w: *std.Io.Writer, result: *const parser.Parse
     try w.writeAll("\n(check-sat)\n(get-model)\n");
 }
 
-const lexer = @import("lexer.zig");
+const lexer = @import("lexer");
 
 fn buildResult(alloc: Allocator, src: []const u8) !parser.ParseResult {
     const tokens = try lexer.tokenize(alloc, src);

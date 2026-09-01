@@ -434,7 +434,7 @@ class TestNonBooleanConstructs:
     """to_cnf() raises NonBooleanConstructError by default for constructs
     above the plain Boolean language level that would otherwise silently
     threaten the CNF's semantics (Tier 1/2 -- see
-    docs/non_boolean_support.md), but only ever warns for purely decorative
+    README.md#non-boolean-constructs), but only ever warns for purely decorative
     ones (Tier 3: typed features, value attributes). Identical across all
     three backends -- parametrized over all of them, not just zig.
     Merely constructing a UVL never raises: the Boolean-only limitation is
@@ -540,7 +540,7 @@ class TestConversion:
     """conversion=True applies the UVLParser paper's conversion strategies
     for group cardinality and feature-local constraint attributes instead
     of dropping them, identically on all three backends -- see
-    parser/src/conversion.zig / docs/non_boolean_support.md."""
+    parser/src/cnf/conversion.zig / README.md#non-boolean-constructs."""
 
     @pytest.mark.parametrize("backend", BACKENDS)
     def test_group_cardinality_no_longer_raises_under_conversion(self, backend):
@@ -636,7 +636,7 @@ features
     @pytest.mark.parametrize("backend", BACKENDS)
     def test_feature_cardinality_still_raises_under_conversion(self, backend):
         """Feature cardinality is explicitly deferred future work -- see
-        docs/non_boolean_support.md -- and must keep raising even with
+        README.md#non-boolean-constructs -- and must keep raising even with
         conversion=True."""
         example_file = os.path.join(
             os.path.dirname(__file__), "..", "examples", "feature-cardinality.uvl"

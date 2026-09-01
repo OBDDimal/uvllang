@@ -1,5 +1,5 @@
 """
-Tests for the native `uvl2smt` binary (parser/src/smt.zig / uvl2smt.zig),
+Tests for the native `uvl2smt` binary (parser/src/smt/writer.zig / uvl2smt.zig),
 using z3 as an external correctness oracle: an emitted .smt2 file must at
 minimum parse and solve without error under z3, and satisfiability must
 match what we can independently confirm.
@@ -88,10 +88,9 @@ def test_smt_output_matches_python_bindings(uvl2smt_bin, tmp_path):
 
 
 def test_quoted_feature_names_round_trip_through_z3(uvl2smt_bin, tmp_path):
-    """Regression test for the "declare-const with literal quote
-    characters" bug found during development: a UVL-quoted feature name
-    must become a valid SMT-LIB symbol (bare or |...|-quoted), not be
-    emitted with its source quote characters intact."""
+    """A UVL-quoted feature name must become a valid SMT-LIB symbol (bare
+    or |...|-quoted), not be emitted with its source quote characters
+    intact."""
     z3 = pytest.importorskip("z3")
     uvl_path = tmp_path / "model.uvl"
     uvl_path.write_text(
@@ -110,9 +109,8 @@ def test_quoted_feature_names_round_trip_through_z3(uvl2smt_bin, tmp_path):
 
 
 def test_string_valued_attribute_declared_as_string_sort(uvl2smt_bin, tmp_path):
-    """Regression test for the "attribute unconditionally declared Int"
-    bug found during development: a string-valued attribute must be
-    declared (and asserted) as SMT-LIB String, not Int."""
+    """A string-valued attribute must be declared (and asserted) as
+    SMT-LIB String, not Int."""
     z3 = pytest.importorskip("z3")
     uvl_path = tmp_path / "model.uvl"
     uvl_path.write_text(
@@ -147,7 +145,7 @@ def test_default_output_path(uvl2smt_bin, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# any2uvl's .smt2 input support (parser/src/smtlib.zig, parser/src/any2uvl.zig)
+# any2uvl's .smt2 input support (parser/src/smt/reader.zig, parser/src/any2uvl.zig)
 # ---------------------------------------------------------------------------
 
 ANY2UVL_BIN = os.path.join(PARSER_DIR, "zig-out", "bin", "any2uvl")

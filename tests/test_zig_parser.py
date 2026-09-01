@@ -72,7 +72,7 @@ def _run_zig(zig_parser, uvl_path, out_path):
     # --simplify: the Python side (_python_dimacs below) always goes through
     # capi.zig's sourceToCnfImpl/UVL.to_cnf, which always runs the global
     # subsumption pass unconditionally. The CLI only runs it when asked
-    # (see docs/pipeline_clause_dedup.md), so it must be requested here too
+    # (see README.md#cnf-clause-set-simplification), so it must be requested here too
     # for the two sides' clause sets to be exactly comparable.
     result = subprocess.run(
         [zig_parser, uvl_path, out_path, "--simplify"], capture_output=True, text=True
@@ -92,7 +92,7 @@ def _python_dimacs(uvl_path, out_path):
     # equivalence check, not the NonBooleanConstructError policy.
     # simplify=True: matches _run_zig's --simplify, so both sides run the
     # same global subsumption pass -- both default to off now (CLI and API
-    # behavior intentionally match, see docs/pipeline_clause_dedup.md), so
+    # behavior intentionally match, see README.md#cnf-clause-set-simplification), so
     # without this the two sides would compare unsimplified against
     # simplified and always mismatch.
     model = UVL(
@@ -283,7 +283,7 @@ def test_zig_capi_hierarchy_matches_full_pipeline(zig_parser, name):
 # attribute values are compared with whitespace stripped: Lark/ANTLR
 # concatenate token text with no separator (losing the original spacing),
 # while zig reconstructs the real source span (keeping it) -- an
-# intentional difference confirmed with the user, not a bug.
+# intentional difference between the backends, not a bug.
 # ---------------------------------------------------------------------------
 
 
@@ -375,18 +375,18 @@ def test_to_smt_is_identical_across_backends(uvl_path):
 
 
 # ---------------------------------------------------------------------------
-# uvl2cnf --strict: refuses instead of warning when a construct above the
-# Boolean language level would be silently dropped (parser/src/main.zig,
+# uvl2cnf --loud: refuses instead of warning when a construct above the
+# Boolean language level would be silently dropped (parser/src/uvl2cnf.zig,
 # parser/src/pipeline.zig's NonBooleanCounts.isThreatening).
 
 
-def test_strict_fails_on_group_cardinality(zig_parser, tmp_path):
+def test_loud_fails_on_group_cardinality(zig_parser, tmp_path):
     uvl_path = tmp_path / "model.uvl"
     uvl_path.write_text(
         "features\n    Root\n        [2..3]\n            A\n            B\n            C\n"
     )
     result = subprocess.run(
-        [zig_parser, "--strict", str(uvl_path), str(tmp_path / "out.dimacs")],
+        [zig_parser, "--loud", str(uvl_path), str(tmp_path / "out.dimacs")],
         capture_output=True,
         text=True,
     )
@@ -394,12 +394,12 @@ def test_strict_fails_on_group_cardinality(zig_parser, tmp_path):
     assert "refusing" in result.stderr
 
 
-def test_strict_succeeds_without_non_boolean_constructs(zig_parser, tmp_path):
+def test_loud_succeeds_without_non_boolean_constructs(zig_parser, tmp_path):
     uvl_path = tmp_path / "model.uvl"
     uvl_path.write_text("features\n    Root\n        mandatory\n            A\n")
     out_path = tmp_path / "out.dimacs"
     result = subprocess.run(
-        [zig_parser, "--strict", str(uvl_path), str(out_path)],
+        [zig_parser, "--loud", str(uvl_path), str(out_path)],
         capture_output=True,
         text=True,
     )
@@ -407,7 +407,7 @@ def test_strict_succeeds_without_non_boolean_constructs(zig_parser, tmp_path):
     assert out_path.exists()
 
 
-def test_strict_with_conversion_succeeds_on_group_cardinality(zig_parser, tmp_path):
+def test_loud_with_conversion_succeeds_on_group_cardinality(zig_parser, tmp_path):
     uvl_path = tmp_path / "model.uvl"
     uvl_path.write_text(
         "features\n    Root\n        [2..3]\n            A\n            B\n            C\n"
@@ -415,7 +415,7 @@ def test_strict_with_conversion_succeeds_on_group_cardinality(zig_parser, tmp_pa
     result = subprocess.run(
         [
             zig_parser,
-            "--strict",
+            "--loud",
             "--conversion",
             str(uvl_path),
             str(tmp_path / "out.dimacs"),

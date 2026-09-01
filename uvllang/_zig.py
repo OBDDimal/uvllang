@@ -18,7 +18,7 @@ Entry points:
 
 `hierarchy_to_cnf` and `parse_source_to_cnf` both return `(non_boolean,
 raw_dimacs)` -- `raw_dimacs` is zig's own DIMACS bytes verbatim
-(writeDimacs, parser/src/cnf.zig); this module does not parse DIMACS
+(writeDimacs, parser/src/cnf/cnf.zig); this module does not parse DIMACS
 itself, `UVL.to_cnf`/`UVL.to_dimacs` hand the bytes straight to
 `pysat.formula.CNF`. `parse_source_full` returns a dict, see its
 docstring. `dimacs_to_uvl` returns `(uvl_text, verify_result)`, see its
@@ -29,8 +29,22 @@ import ctypes
 import os
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LIB_DIR = os.path.join(_ROOT, "parser", "zig-out", "lib")
 _LIB_NAMES = ("libuvlparser.so", "libuvlparser.dylib", "uvlparser.dll")
+# Searched in order: parser/zig-out/lib first -- a dev checkout (an
+# editable install, or just running from the repo) has this from running
+# `zig build` directly in parser/, and it must win over the second path
+# even if that happens to exist too (running setup.py's build hook, e.g.
+# via `python -m build` or scripts/release.sh, directly in this checkout
+# leaves a real file there as a side effect -- see _bundle_lib() -- which
+# would otherwise shadow a dev's own native build with a stale, possibly
+# wasm-flavored one). A real (non-editable) install has no parser/
+# directory at all, so it always falls through to the second path, where
+# setup.py's _bundle_lib() placed the library before packaging and
+# package_data (pyproject.toml) shipped it in the wheel.
+_LIB_DIRS = (
+    os.path.join(_ROOT, "parser", "zig-out", "lib"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "_zig_libs"),
+)
 
 _NO_ROOT = ctypes.c_size_t(-1).value
 
@@ -68,7 +82,7 @@ class _CCardinalityGroup(ctypes.Structure):
 class _CNonBooleanCounts(ctypes.Structure):
     """Mirrors capi.zig's NonBooleanCounts extern struct exactly (field
     order matters for ctypes layout). Tier 1 fields first, then Tier 2,
-    then Tier 3 -- see docs/non_boolean_support.md.
+    then Tier 3 -- see README.md#non-boolean-constructs.
     """
 
     _fields_ = [
@@ -86,15 +100,19 @@ class _CNonBooleanCounts(ctypes.Structure):
 
 
 def _load_lib():
-    for name in _LIB_NAMES:
-        path = os.path.join(_LIB_DIR, name)
-        if os.path.exists(path):
-            lib = ctypes.CDLL(path)
-            break
+    for lib_dir in _LIB_DIRS:
+        for name in _LIB_NAMES:
+            path = os.path.join(lib_dir, name)
+            if os.path.exists(path):
+                lib = ctypes.CDLL(path)
+                break
+        else:
+            continue
+        break
     else:
         raise RuntimeError(
             "Zig backend not built, run `zig build` in parser/ "
-            f"(expected one of {_LIB_NAMES} in {_LIB_DIR})"
+            f"(expected one of {_LIB_NAMES} in one of {_LIB_DIRS})"
         )
 
     lib.uvl_last_error.restype = ctypes.c_char_p
@@ -203,26 +221,26 @@ def _take_buffer(lib, out_ptr, out_len):
 def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = False):
     """Full pipeline: UVL source text -> (non_boolean, raw_dimacs).
 
-    `raw_dimacs` is zig's own DIMACS bytes (writeDimacs, parser/src/cnf.zig)
+    `raw_dimacs` is zig's own DIMACS bytes (writeDimacs, parser/src/cnf/cnf.zig)
     -- the same bytes `uvl2cnf` writes -- for the caller (uvllang.uvl.UVL)
     to hand to `pysat.formula.CNF(from_string=...)` directly; this module
     does not parse DIMACS itself.
 
     `non_boolean` is a dict of counts for constructs above the plain
-    Boolean language level (see docs/non_boolean_support.md) -- Zig has
+    Boolean language level (see README.md#non-boolean-constructs) -- Zig has
     already printed its own warnings for each of them to stderr by the
     time this returns; the caller decides whether any of them should also
     raise.
 
     `simplify` gates the global subsumption/SSR-disabled clause-set
-    simplification pass (see docs/pipeline_clause_dedup.md) -- off by
+    simplification pass (see README.md#cnf-clause-set-simplification) -- off by
     default, matching the `uvl2cnf` CLI's `--simplify` flag, so this API
     and the CLI produce the same clause set for the same input unless the
     caller explicitly opts in.
 
     `conversion` gates the UVLParser-paper conversion strategies for group
     cardinality and feature-local constraint attributes (see
-    parser/src/conversion.zig / docs/non_boolean_support.md) -- off by
+    parser/src/cnf/conversion.zig / README.md#non-boolean-constructs) -- off by
     default, matching the `uvl2cnf` CLI's `--conversion` flag.
     """
     lib = _get_lib()
@@ -250,7 +268,7 @@ def is_non_boolean_threatening(non_boolean: dict, conversion: bool = False) -> b
     applicable) should make to_cnf()/to_dimacs() raise instead of
     silently continuing. Single source of truth: capi.zig's
     NonBooleanCounts.isThreatening (parser/src/pipeline.zig), shared with
-    the `uvl2cnf --strict` CLI flag.
+    the `uvl2cnf --loud` CLI flag.
     """
     lib = _get_lib()
     counts = _CNonBooleanCounts(**non_boolean)
@@ -391,7 +409,7 @@ def write_bytes(data: bytes, filepath) -> None:
 
 def source_to_smt(source: str, filepath=None):
     """Full pipeline: UVL source text -> SMT-LIB 2, via the native writer
-    (parser/src/smt.zig). Unlike parse_source_to_cnf, not restricted to
+    (parser/src/smt/writer.zig). Unlike parse_source_to_cnf, not restricted to
     the plain Boolean language level -- numeric comparisons, aggregates,
     and typed features are all represented. Backs UVL.to_smt() for
     backend="zig"; the native uvl2smt binary calls the same Zig code
@@ -448,7 +466,7 @@ def hierarchy_to_cnf(
         list, never the raw source those depend on; the caller merges in
         its own tree-walk counts for those.
     conversion: mirrors parse_source_to_cnf's `conversion` flag -- applies
-        the group-cardinality encoding (parser/src/conversion.zig) to
+        the group-cardinality encoding (parser/src/cnf/conversion.zig) to
         `cardinality_groups`. Feature-local constraint attributes need no
         separate parameter: fold their text into `constraints` before
         calling this, the same as any other constraint.

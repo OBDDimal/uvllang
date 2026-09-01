@@ -1,21 +1,33 @@
-//! Shared source -> CNF pipeline. `uvl2cnf` (main.zig) and
-//! `uvl_source_to_cnf` (capi.zig, the Python API's zig backend) used to
-//! each hand-roll their own copy of "assign ids, emit the root/hierarchy/
-//! optional --conversion clauses, walk every top-level constraint into
-//! clauses or a counted+warned skip" -- identical in substance but free
-//! to drift (and already had: the two printed the same non-Boolean
-//! warnings in different orders relative to each other and to
-//! --simplify's own messages). This module is the one copy of that
-//! logic both now call, so the CLI and the library can never again
-//! disagree about what a given model warns about or produces.
+//! Shared source -> CNF pipeline: assigns ids, emits the root/hierarchy/
+//! optional --conversion clauses, and walks every top-level constraint
+//! into clauses or a counted+warned skip. Both `uvl2cnf` (uvl2cnf.zig)
+//! and `uvl_source_to_cnf` (capi.zig, the Python API's zig backend) call
+//! this one copy, so the CLI and the library always agree on what a
+//! given model warns about and produces.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-const parser = @import("parser.zig");
-const cnf = @import("cnf.zig");
-const constraint = @import("constraint.zig");
-const conversion = @import("conversion.zig");
-const builder_mod = @import("builder.zig");
+const parser = @import("parser");
+const cnf = @import("cnf");
+const constraint = @import("constraint");
+const conversion = @import("conversion");
+const builder_mod = @import("builder");
+
+/// std.debug.print, except a no-op on wasm32-emscripten (the Pyodide
+/// build, see build.zig's `pyodide` option and capi.zig's
+/// `std_options_debug_io` override): that target's `debug_io` is
+/// `std.Io.failing` (there is no working `std.Io.Threaded` for it), and
+/// std.debug.print hits `unreachable` once its internal buffer actually
+/// flushes to a failing writer -- not on every call, which is why this
+/// wasn't caught by earlier, shorter-output smoke testing. This module
+/// and capi.zig are the only shared code that runs on that target
+/// (uvl2cnf.zig etc. are native-only), so this is the one choke point
+/// that needs the guard.
+pub fn dbgPrint(comptime fmt: []const u8, args: anytype) void {
+    if (comptime builtin.target.cpu.arch.isWasm()) return;
+    std.debug.print(fmt, args);
+}
 
 pub const ConstraintCounts = struct {
     attribute_ref_constraints: usize = 0,
@@ -23,11 +35,11 @@ pub const ConstraintCounts = struct {
 };
 
 /// Counts of constructs above the plain Boolean language level -- see
-/// docs/non_boolean_support.md. Tier 1 (corrupts CNF correctness or loses
+/// README.md#non-boolean-constructs. Tier 1 (corrupts CNF correctness or loses
 /// a real constraint) first, then Tier 2 (a constraint is dropped), then
 /// Tier 3 (decorative metadata only). This is capi.zig's Python-facing
 /// struct (an `extern struct` for a stable C ABI layout) -- defined here
-/// so `uvl2cnf`'s `--strict` (main.zig) and `UVL(drop_non_boolean=False)`
+/// so `uvl2cnf`'s `--loud` (uvl2cnf.zig) and `UVL(drop_non_boolean=False)`
 /// (capi.zig) share one `isThreatening` instead of each tracking the
 /// threatening-category list on its own.
 pub const NonBooleanCounts = extern struct {
@@ -40,7 +52,7 @@ pub const NonBooleanCounts = extern struct {
     attributed_features: usize = 0,
 
     /// True iff a caller that wants to fail instead of silently
-    /// continuing (`uvl2cnf --strict`, `UVL(drop_non_boolean=False)`)
+    /// continuing (`uvl2cnf --loud`, `UVL(drop_non_boolean=False)`)
     /// should refuse: any Tier 1/2 count is nonzero, except group
     /// cardinality and constraint attributes are exempt when
     /// `do_conversion` actually converts them instead of dropping them.
@@ -87,6 +99,16 @@ pub const BuildResult = struct {
 /// instead of being silently skipped. Never simplifies -- a caller that
 /// wants `--simplify` runs `subsumption.simplify` over the returned
 /// clauses itself, since that decision is orthogonal to everything here.
+/// Prints one "Info: Skipping line N: '<constraint text>' (LL: <level>)"
+/// line for a constraint above the plain Boolean language level, with the
+/// constraint's own source text (trimmed) shown for identification rather
+/// than just its line number. `level` names which language level the
+/// constraint requires (see README.md#non-boolean-constructs).
+fn printSkippedConstraint(line: u32, text: []const u8, level: []const u8) void {
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    dbgPrint("Info: Skipping line {d}: '{s}' (LL: {s})\n", .{ line, trimmed, level });
+}
+
 pub fn buildClauses(alloc: Allocator, result: *const parser.ParseResult, do_conversion: bool) !BuildResult {
     var ids = try cnf.assignIds(alloc, &result.builder.features);
 
@@ -110,20 +132,20 @@ pub fn buildClauses(alloc: Allocator, result: *const parser.ParseResult, do_conv
         if (info.node) |node| {
             const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
                 error.UnknownFeature => {
-                    std.debug.print("Warning: could not convert constraint at line {d}: unknown feature reference\n", .{info.text_line});
+                    dbgPrint("Warning: could not convert constraint at line {d}: unknown feature reference\n", .{info.text_line});
                     continue;
                 },
                 else => return err,
             };
             for (node_clauses) |c| try clauses.append(alloc, c);
         } else if (info.saw_dot) {
-            std.debug.print("Info: Skipping constraint with attribute reference (line {d})\n", .{info.text_line});
+            printSkippedConstraint(info.text_line, info.text, "attribute-reference");
             counts.attribute_ref_constraints += 1;
         } else if (info.saw_comparison and info.saw_bool_op) {
-            std.debug.print("Info: Skipping constraint with arithmetic comparison (line {d})\n", .{info.text_line});
+            printSkippedConstraint(info.text_line, info.text, "arithmetic");
             counts.comparison_constraints += 1;
         } else if (info.saw_comparison) {
-            std.debug.print("Info: Skipping constraint (line {d}): a bare comparison isn't Boolean-encodable\n", .{info.text_line});
+            printSkippedConstraint(info.text_line, info.text, "comparison");
             counts.comparison_constraints += 1;
         }
     }
@@ -135,40 +157,44 @@ pub fn buildClauses(alloc: Allocator, result: *const parser.ParseResult, do_conv
 /// warnings -- Tier 1 (group/feature cardinality, feature-local
 /// constraint attributes), Tier 2 (attribute-ref/comparison constraints,
 /// from `counts`), Tier 3 (typed/attributed features) -- in one
-/// canonical order. See docs/non_boolean_support.md.
+/// canonical order. See README.md#non-boolean-constructs.
 pub fn printNonBooleanWarnings(b: *const builder_mod.Builder, counts: ConstraintCounts, do_conversion: bool) void {
     if (b.cardinality_group_count > 0) {
         if (do_conversion) {
-            std.debug.print("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
+            dbgPrint("Info: {d} group(s) use a cardinality range ([i..j]); converted to enumerated Boolean clauses\n", .{b.cardinality_group_count});
         } else {
-            std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
+            dbgPrint("Warning: {d} group(s) use a cardinality range ([i..j]); the bound is not enforced in the CNF (pass --conversion to encode it)\n", .{b.cardinality_group_count});
         }
     }
     if (b.constraint_attribute_count > 0) {
         if (do_conversion) {
-            std.debug.print("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
+            dbgPrint("Info: {d} feature-local `constraint`/`constraints` attribute(s) converted into ordinary constraints\n", .{b.constraint_attribute_count});
         } else {
-            std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
+            dbgPrint("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted (pass --conversion to extract them)\n", .{b.constraint_attribute_count});
         }
     }
     if (b.cardinality_feature_count > 0) {
-        std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded (not supported by --conversion yet)\n", .{b.cardinality_feature_count});
+        dbgPrint("Warning: {d} feature(s) use a clone cardinality range ([i..j]); clone instances are not encoded -- see README.md#feature-cardinality-why-its-not-converted\n", .{b.cardinality_feature_count});
+    }
+    const skipped_constraints = counts.attribute_ref_constraints + counts.comparison_constraints;
+    if (skipped_constraints > 0) {
+        dbgPrint("Info: Skipped {d} constraint(s) total above the Boolean language level (see above)\n", .{skipped_constraints});
     }
     if (counts.attribute_ref_constraints > 0) {
-        std.debug.print("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{counts.attribute_ref_constraints});
+        dbgPrint("Info: Ignored {d} constraint(s) referencing a feature attribute\n", .{counts.attribute_ref_constraints});
     }
     if (counts.comparison_constraints > 0) {
-        std.debug.print("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{counts.comparison_constraints});
+        dbgPrint("Info: Ignored {d} constraint(s) containing a numeric comparison\n", .{counts.comparison_constraints});
     }
     if (b.typed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
+        dbgPrint("Info: {d} feature(s) declare a non-Boolean type; ignored for CNF purposes\n", .{b.typed_feature_count});
     }
     if (b.attributed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
+        dbgPrint("Info: {d} feature(s) carry value attributes; ignored for CNF purposes\n", .{b.attributed_feature_count});
     }
 }
 
-const lexer = @import("lexer.zig");
+const lexer = @import("lexer");
 
 fn buildResult(alloc: Allocator, src: []const u8) !parser.ParseResult {
     const tokens = try lexer.tokenize(alloc, src);

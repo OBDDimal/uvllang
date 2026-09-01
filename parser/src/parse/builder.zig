@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const constraint = @import("constraint.zig");
+const constraint = @import("constraint");
 
 pub const ChildType = enum { mandatory, optional };
 
@@ -43,12 +43,9 @@ pub const CardinalityGroup = struct {
 };
 
 /// One feature-local `constraint <expr>` / one item of `constraints
-/// [<expr>, ...]`, actually parsed into a constraint AST (unlike the
-/// group members above, there's no other representation for these to
-/// piggyback on -- they were previously skipped byte-for-byte). Only
-/// merged into the CNF's constraint set by `--conversion`/
-/// `conversion=True`; always populated at parse time regardless, same
-/// as `cardinality_groups`.
+/// [<expr>, ...]`, parsed into a constraint AST. Only merged into the
+/// CNF's constraint set by `--conversion`/`conversion=True`; always
+/// populated at parse time regardless, same as `cardinality_groups`.
 pub const FeatureLocalConstraint = struct {
     feature: []const u8,
     node: ?*constraint.Node,
@@ -91,13 +88,13 @@ pub const Builder = struct {
     ordered_features: std.ArrayList([]const u8) = .empty,
 
     /// Counts of constructs above the plain Boolean language level, all
-    /// silently mishandled today (see docs/non_boolean_support.md):
+    /// silently mishandled today (see README.md#non-boolean-constructs):
     /// Tier 1 (corrupts CNF correctness or loses a real constraint) --
     /// `cardinality_group_count`, `constraint_attribute_count`,
     /// `cardinality_feature_count`; Tier 3 (decorative metadata) --
     /// `typed_feature_count`, `attributed_feature_count`. Tier 2
     /// (attribute-reference/comparison constraints) is counted per-constraint
-    /// in capi.zig/main.zig instead, not here.
+    /// in capi.zig/uvl2cnf.zig instead, not here.
     cardinality_group_count: usize = 0,
     constraint_attribute_count: usize = 0,
     cardinality_feature_count: usize = 0,

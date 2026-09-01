@@ -6,16 +6,16 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builder_mod = @import("builder.zig");
+const builder_mod = @import("builder");
 const HInfo = builder_mod.HInfo;
 const ChildEdge = builder_mod.ChildEdge;
 const ChildType = builder_mod.ChildType;
 const GroupEntry = builder_mod.GroupEntry;
-const cnf = @import("cnf.zig");
-const subsumption = @import("subsumption.zig");
-const lexer = @import("lexer.zig");
-const parser_mod = @import("parser.zig");
-const constraint = @import("constraint.zig");
+const cnf = @import("cnf");
+const subsumption = @import("subsumption");
+const lexer = @import("lexer");
+const parser_mod = @import("parser");
+const constraint = @import("constraint");
 
 fn absLess(_: void, a: i32, b: i32) bool {
     return @abs(a) < @abs(b);
@@ -338,7 +338,7 @@ pub fn buildGraph(alloc: Allocator, clauses: []const []i32) !Graph {
 //
 // `buildGraph` above only ever finds a child=>parent edge if the literal
 // 2-literal clause `{-child, parent}` is still present. A global
-// subsumption/simplification pass (see docs/pipeline_clause_dedup.md) can
+// subsumption/simplification pass (see README.md#cnf-clause-set-simplification) can
 // remove that exact clause while leaving the *implication* semantically
 // true (e.g. `parent` turns out to be forced true unconditionally by other
 // clauses, so `{-child, parent}` is subsumed by the unit clause `{parent}`
@@ -1503,7 +1503,7 @@ pub fn recoverFromParsed(
     // that a *different* CTC already subsumes (that's an orthogonal
     // simplification, not a re-parenting move). Running the same
     // equivalence-preserving global subsumption pass used elsewhere in the
-    // pipeline (see docs/pipeline_clause_dedup.md) over just this residual
+    // pipeline (see README.md#cnf-clause-set-simplification) over just this residual
     // set cleans that up. Safe without a satisfiability check: ctc_clauses
     // is a subset of the original (necessarily satisfiable) parsed.clauses,
     // so it can never turn out UNSAT on its own. Baseline (non-optimized)

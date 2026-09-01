@@ -1,11 +1,11 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const tok = @import("token.zig");
+const tok = @import("token");
 const Token = tok.Token;
 const Kind = tok.Kind;
-const builder_mod = @import("builder.zig");
+const builder_mod = @import("builder");
 const Builder = builder_mod.Builder;
-const constraint = @import("constraint.zig");
+const constraint = @import("constraint");
 
 pub const ParseError = error{ UnexpectedToken, UnexpectedEnd, NoFeatures } || Allocator.Error || constraint.ParseError;
 
@@ -328,10 +328,10 @@ fn parseGroup(p: *P, b: *Builder) ParseError!void {
             // (see builder.zig's doc comment): their members become plain
             // optional children of the enclosing feature, with no clause
             // anywhere enforcing the [i..j] bound by default -- see
-            // docs/non_boolean_support.md, Tier 1. `--conversion`/
+            // README.md#non-boolean-constructs, Tier 1. `--conversion`/
             // `conversion=True` encodes the bound from the
             // `Builder.cardinality_groups` side-channel captured here
-            // instead (see capi.zig/main.zig).
+            // instead (see capi.zig/uvl2cnf.zig).
             const range = parseCardinalityRange(p.cur().text);
             _ = p.advance();
             b.cardinality_group_count += 1;
@@ -466,7 +466,7 @@ pub fn parseModel(alloc: Allocator, tokens: []const Token) ParseError!ParseResul
     return .{ .builder = b, .constraints = try constraints.toOwnedSlice(alloc) };
 }
 
-const lexer = @import("lexer.zig");
+const lexer = @import("lexer");
 
 test "feature type and attributes are captured" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

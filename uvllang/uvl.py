@@ -7,7 +7,7 @@ from uvllang import _zig
 
 class NonBooleanConstructError(ValueError):
     """Raised by to_cnf() for constructs above the Boolean language level
-    (docs/non_boolean_support.md). drop_non_boolean=True warns instead.
+    (README.md#non-boolean-constructs). drop_non_boolean=True warns instead.
     """
 
 
@@ -58,7 +58,7 @@ class UVL:
     (a dict with total_orig_clauses/missing/extra, or None otherwise).
 
     to_cnf()/to_dimacs() support only the Boolean language level
-    (docs/non_boolean_support.md) and raise NonBooleanConstructError if
+    (README.md#non-boolean-constructs) and raise NonBooleanConstructError if
     the model has group cardinality, feature-local constraint attributes,
     or feature cardinality; drop_non_boolean=True warns instead. to_smt()
     has no such restriction.
@@ -69,7 +69,7 @@ class UVL:
     still dropped.
 
     simplify=True additionally runs the global subsumption/SSR pass
-    (docs/pipeline_clause_dedup.md).
+    (README.md#cnf-clause-set-simplification).
     """
 
     def __init__(
@@ -270,8 +270,8 @@ class UVL:
 
     def to_cnf(self, verbose_info=True):
         """Parses zig's own DIMACS output (self._zig_dimacs, parser/src/
-        cnf.zig's writeDimacs) with pysat.formula.CNF directly -- ids are
-        always zig's own (alphabetical by feature name), never
+        cnf/cnf.zig's writeDimacs) with pysat.formula.CNF directly -- ids
+        are always zig's own (alphabetical by feature name), never
         caller-chosen. Raises NonBooleanConstructError unless
         drop_non_boolean was passed to the constructor.
 
@@ -289,7 +289,7 @@ class UVL:
 
     def to_smt(self, filepath=None):
         """Convert feature model to SMT-LIB 2 format via
-        uvllang._zig.source_to_smt (parser/src/smt.zig), for all backends.
+        uvllang._zig.source_to_smt (parser/src/smt/writer.zig), for all backends.
         Returns the text if `filepath` is None, else writes zig's own
         bytes there directly and returns None.
         """

@@ -8,7 +8,7 @@
 //!   - `uvl_source_to_cnf`: full pipeline (lex, parse, build hierarchy,
 //!     generate CNF) on raw UVL source text, writing DIMACS to an
 //!     in-memory buffer instead of a file. Shares its actual clause-
-//!     building and warning logic with the `uvl2cnf` CLI (main.zig) via
+//!     building and warning logic with the `uvl2cnf` CLI (uvl2cnf.zig) via
 //!     pipeline.zig.
 //!   - `uvl_hierarchy_to_cnf`: only the CNF-generation step, for callers
 //!     that already parsed the file themselves and supply the hierarchy
@@ -20,19 +20,33 @@
 //! the arena and can be freed independently via `uvl_free_buffer`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-const lexer = @import("lexer.zig");
-const parser = @import("parser.zig");
-const builder_mod = @import("builder.zig");
-const cnf = @import("cnf.zig");
-const constraint = @import("constraint.zig");
-const subsumption = @import("subsumption.zig");
-const recovery = @import("recovery.zig");
-const pipeline = @import("pipeline.zig");
-const smt = @import("smt.zig");
-const conversion = @import("conversion.zig");
+const lexer = @import("lexer");
+const parser = @import("parser");
+const builder_mod = @import("builder");
+const cnf = @import("cnf");
+const constraint = @import("constraint");
+const subsumption = @import("subsumption");
+const recovery = @import("recovery");
+const pipeline = @import("pipeline");
+const smt = @import("smt_writer");
+const conversion = @import("conversion");
 
-const gpa = std.heap.smp_allocator;
+// wasm32-emscripten (the Pyodide build, see build.zig's `pyodide` option)
+// has no working `std.Io.Threaded` (its POSIX layer is missing the
+// getrandom/errno bindings that backing implementation needs) and no
+// SmpAllocator (which requires multiple threads) -- both are swapped out
+// for wasm-safe equivalents. Native builds are unaffected.
+pub const std_options_debug_io: std.Io = if (builtin.target.cpu.arch.isWasm())
+    std.Io.failing
+else
+    std.Options.debug_threaded_io.?.io();
+
+const gpa = if (builtin.target.cpu.arch.isWasm())
+    std.heap.page_allocator
+else
+    std.heap.smp_allocator;
 
 var last_error_buf: [1024]u8 = undefined;
 var last_error_len: usize = 0;
@@ -76,8 +90,8 @@ fn statusForError(err: anyerror) StatusCode {
     };
 }
 
-/// See pipeline.zig's NonBooleanCounts -- defined there so main.zig
-/// (uvl2cnf --strict) and this file (UVL(drop_non_boolean=False)) share
+/// See pipeline.zig's NonBooleanCounts -- defined there so uvl2cnf.zig
+/// (uvl2cnf --loud) and this file (UVL(drop_non_boolean=False)) share
 /// one isThreatening instead of each tracking their own copy.
 pub const NonBooleanCounts = pipeline.NonBooleanCounts;
 
@@ -103,10 +117,10 @@ fn sourceToCnfImpl(
     var out_clauses: []const []const i32 = cclauses;
     if (do_simplify) {
         const simplified = try subsumption.simplify(alloc, cclauses, false);
-        if (simplified.removed_by_subsumption > 0) std.debug.print("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
-        if (simplified.literals_removed_by_ssr > 0) std.debug.print("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
-        if (simplified.tautologies_removed > 0) std.debug.print("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
-        if (simplified.unsat) std.debug.print("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
+        if (simplified.removed_by_subsumption > 0) pipeline.dbgPrint("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
+        if (simplified.literals_removed_by_ssr > 0) pipeline.dbgPrint("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
+        if (simplified.tautologies_removed > 0) pipeline.dbgPrint("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
+        if (simplified.unsat) pipeline.dbgPrint("Warning: formula is UNSAT (constraints are contradictory)\n", .{});
         out_clauses = simplified.clauses;
     }
 
@@ -124,12 +138,12 @@ fn sourceToCnfImpl(
 /// matching the `uvl2cnf` CLI's `--simplify` flag -- off by default there
 /// and here, so the CLI and the Python API produce the same clause set for
 /// the same input unless the caller explicitly opts in. See
-/// docs/pipeline_clause_dedup.md.
+/// README.md#cnf-clause-set-simplification.
 /// `do_conversion`: gates the UVLParser-paper conversion strategies for
 /// group cardinality and feature-local constraint attributes, matching
 /// the `uvl2cnf` CLI's `--conversion` flag -- off by default, so both
-/// stay silently dropped (as before) unless the caller opts in. See
-/// conversion.zig / docs/non_boolean_support.md.
+/// constructs are silently dropped unless the caller opts in. See
+/// conversion.zig / README.md#non-boolean-constructs.
 export fn uvl_source_to_cnf(
     src_ptr: [*]const u8,
     src_len: usize,
@@ -151,7 +165,7 @@ export fn uvl_source_to_cnf(
 /// Single source of truth for "does this model use constructs above the
 /// Boolean language level that a strict caller should refuse over" --
 /// `NonBooleanCounts.isThreatening` (pipeline.zig), shared with `uvl2cnf
-/// --strict` (main.zig). Callers that already parsed elsewhere (Lark/
+/// --loud` (uvl2cnf.zig). Callers that already parsed elsewhere (Lark/
 /// ANTLR, via `uvl_hierarchy_to_cnf`) merge their own tree-walk counts
 /// into a `NonBooleanCounts` in Python before calling this.
 export fn uvl_is_non_boolean_threatening(counts: *const NonBooleanCounts, do_conversion: u8) callconv(.c) u8 {
@@ -420,11 +434,12 @@ fn hierarchyToCnfImpl(
             // `A.enabled => B`), so this -- the same real syntactic
             // check `uvl_source_to_cnf` already does for zig -- is the
             // source of truth for all three backends.
+            const trimmed = std.mem.trim(u8, text, " \t\r\n");
             if (parsed.saw_dot) {
-                std.debug.print("Info: Skipping constraint {d}: attribute reference\n", .{idx});
+                pipeline.dbgPrint("Info: Skipping constraint {d}: '{s}' (LL: attribute-reference)\n", .{ idx, trimmed });
                 attribute_ref_constraints += 1;
             } else {
-                std.debug.print("Info: Skipping constraint {d}: numeric comparison\n", .{idx});
+                pipeline.dbgPrint("Info: Skipping constraint {d}: '{s}' (LL: comparison)\n", .{ idx, trimmed });
                 comparison_constraints += 1;
             }
             continue;
@@ -432,12 +447,16 @@ fn hierarchyToCnfImpl(
         const node = parsed.node.?;
         const node_clauses = constraint.generateClauses(alloc, &ids, node) catch |err| switch (err) {
             error.UnknownFeature => {
-                std.debug.print("Warning: could not convert constraint {d}: unknown feature reference\n", .{idx});
+                pipeline.dbgPrint("Warning: could not convert constraint {d}: unknown feature reference\n", .{idx});
                 continue;
             },
             else => return err,
         };
         for (node_clauses) |c| try clauses.append(alloc, c);
+    }
+    const skipped_constraints = attribute_ref_constraints + comparison_constraints;
+    if (skipped_constraints > 0) {
+        pipeline.dbgPrint("Info: Skipped {d} constraint(s) total above the Boolean language level (see above)\n", .{skipped_constraints});
     }
 
     const cclauses: []const []const i32 = @ptrCast(clauses.items);

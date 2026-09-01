@@ -4,18 +4,18 @@ Recovery quality tests for any2uvl on the BerkeleyDB feature model.
 Thresholds are set to the current known-good values so regressions are caught.
 
 The `uvl2cnf` CLI's global clause-set simplification pass (subsumption
-elimination; see docs/pipeline_clause_dedup.md) is opt-in via `--simplify`
+elimination; see README.md#cnf-clause-set-simplification) is opt-in via `--simplify`
 and off by default specifically because its canonical output literal order
 (and, if ever enabled, self-subsuming resolution) breaks any2uvl's hierarchy
 reconstruction, which depends on hierarchy edges surviving as
 untouched/positionally-stable clauses. The fixture below intentionally does
-not pass `--simplify`, so parent/group recovery works as before.
+not pass `--simplify`, so parent/group recovery works correctly.
 
-`UVL.to_cnf()` (the Python API, via `capi.zig`) now defaults to the same
+`UVL.to_cnf()` (the Python API, via `capi.zig`) defaults to the same
 unsimplified behavior as the CLI (a `simplify=True` kwarg opts in, mirroring
 `--simplify`), so the two entry points produce the same clause set for the
-same input by default -- the DIMACS-equivalence tests below no longer need
-an xfail for that reason.
+same input by default, and the DIMACS-equivalence tests below need no
+xfail marker.
 
 `_dimacs_equivalent` checks genuine logical equivalence via SAT, not exact
 clause-set identity: `any2uvl --optimize` also runs a subsumption cleanup

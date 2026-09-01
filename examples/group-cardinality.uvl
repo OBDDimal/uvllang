@@ -1,0 +1,9 @@
+features
+    Root
+        mandatory
+            Base
+        [2..3]
+            FeatureA
+            FeatureB
+            FeatureC
+            FeatureD

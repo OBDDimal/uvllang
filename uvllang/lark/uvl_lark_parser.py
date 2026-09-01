@@ -127,8 +127,8 @@ class LarkFeatureModelBuilder(BaseFeatureModelBuilder):
             self._visit_group(tree, "mandatory_children")
         elif tree.data == "cardinality_group":
             # Not wrapped in a "groups" entry -- members stay plain
-            # optional children, same as today; range/members are
-            # captured separately for conversion=True.
+            # optional children; range/members are captured separately
+            # for conversion=True.
             range_token = next(c for c in tree.children if not isinstance(c, Tree))
             self._start_cardinality_group(range_token)
             for child in tree.children:

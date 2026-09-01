@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builder_mod = @import("builder.zig");
+const builder_mod = @import("builder");
 const HInfo = builder_mod.HInfo;
 const GroupKind = builder_mod.GroupKind;
 

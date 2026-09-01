@@ -2,7 +2,7 @@
 //! conversion strategies (Sundermann et al., SPLC'23, Table 1) for the two
 //! Tier 1 constructs that have a clean, well-defined encoding -- group
 //! cardinality and feature-local constraint attributes. See
-//! docs/non_boolean_support.md.
+//! README.md#non-boolean-constructs.
 //!
 //! Feature cardinality (clone multiplicity) is deliberately NOT handled
 //! here: the paper's own prescribed strategy ("repeated subtrees for
@@ -13,8 +13,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builder_mod = @import("builder.zig");
-const constraint = @import("constraint.zig");
+const builder_mod = @import("builder");
+const constraint = @import("constraint");
 
 /// Calls `emit(ctx, subset)` once per `r`-sized subset of `items`, in
 /// increasing-index order. `scratch` is reused across calls as the

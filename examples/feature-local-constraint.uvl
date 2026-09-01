@@ -1,0 +1,6 @@
+features
+    Root
+        optional
+            FeatureA {constraint FeatureA => FeatureB}
+            FeatureB
+            FeatureC {constraints [FeatureC => FeatureB, !FeatureA | FeatureC]}

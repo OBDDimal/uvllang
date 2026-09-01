@@ -224,7 +224,7 @@ class TestSMTExamples:
 @pytest.mark.parametrize("backend", BACKENDS)
 class TestSMTQuotingAndSortInference:
     """Regression tests for quoted-identifier and attribute-sort-inference
-    correctness in to_smt()'s output (parser/src/smt.zig, called for
+    correctness in to_smt()'s output (parser/src/smt/writer.zig, called for
     every backend). Real example models (berkeleydb.uvl, comments.uvl,
     automotive01.uvl) once produced SMT-LIB that z3 rejected outright."""
 

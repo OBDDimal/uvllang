@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const tok = @import("token.zig");
+const tok = @import("token");
 const Token = tok.Token;
 const Kind = tok.Kind;
 
@@ -366,8 +366,8 @@ pub const ConstraintParse = struct {
     node: ?*Node,
     /// The complete tree regardless of `node`/`skip` -- includes `.cmp`
     /// and arithmetic sub-trees a CNF-only consumer can't use. Always
-    /// non-null; used by the SMT writer/reader (parser/src/smt.zig,
-    /// parser/src/smtlib.zig), which have no such restriction.
+    /// non-null; used by the SMT writer/reader (parser/src/smt/writer.zig,
+    /// parser/src/smt/reader.zig), which have no such restriction.
     full: *Node,
     saw_dot: bool,
     saw_comparison: bool,
@@ -448,13 +448,10 @@ fn nnf(alloc: Allocator, n: *Node, negate: bool) ClauseError!*Node {
 // auxiliary variables): subsumption only removes clauses that were
 // already logically implied by another kept clause.
 //
-// This used to run only as a fallback after an unguarded, unpruned
-// distribute -- but that ordering was backwards: pruning is a strict
-// improvement (it can only produce the same clause set or a smaller
-// logically-equivalent one, never a larger one), so preferring the
-// unpruned path by default meant most constraints shipped needlessly
-// bloated CNF while only the pathological ones got the better output.
-// This is now the only construction path.
+// This is the only construction path: pruning is a strict improvement
+// (it can only produce the same clause set or a smaller
+// logically-equivalent one, never a larger one), so there's no case
+// where skipping it would be preferable.
 
 pub const CnfError = ClauseError;
 
@@ -551,7 +548,7 @@ fn occLen(occ: *OccMap, lit: i32) usize {
 /// exact-duplicate check would not suffice here: what actually needs
 /// pruning is a longer clause dominated by a shorter, non-identical one
 /// already present, which is the common case when distributing an OR over
-/// an AND -- see docs/pipeline_clause_dedup.md).
+/// an AND -- see README.md#cnf-clause-set-simplification).
 ///
 /// Below `index_threshold` live entries, `insert` does the same O(kept)
 /// linear scan `addWithSubsumption` always did (cheap in the common case:
@@ -594,14 +591,13 @@ const IndexedKept = struct {
 
     fn insert(self: *IndexedKept, alloc: Allocator, candidate: []i32) !void {
         if (self.occ == null and self.live_count < index_threshold) {
-            // Exactly the old (pre-indexed) linear-scan behavior: O(kept)
-            // per insertion, but with real compaction via `swapRemove` --
-            // NOT tombstoning -- so the scanned array never grows beyond
-            // the current live count. Tombstoning here would silently
-            // turn this back into O(all insertions ever attempted) for
-            // any node that does a lot of evicting (observed: turned a
-            // ~2s run into 3+ minutes on linux-2.6.33.3.uvl during
-            // development).
+            // Below index_threshold: plain O(kept) linear scan per
+            // insertion. Compaction is via `swapRemove`, not tombstoning
+            // -- the scanned array never grows beyond the current live
+            // count. Tombstoning here would make this O(all insertions
+            // ever attempted) for a node that does a lot of evicting
+            // (observed: a ~2s run on linux-2.6.33.3.uvl became 3+
+            // minutes).
             for (self.items.items) |maybe_k| {
                 if (subsumes(maybe_k.?, candidate)) return; // candidate adds nothing new
             }
@@ -801,7 +797,7 @@ test "comparison is skipped" {
     try std.testing.expectEqualStrings("3", parsed.full.cmp.rhs.num);
 }
 
-const lexer = @import("lexer.zig");
+const lexer = @import("lexer");
 
 fn parseText(alloc: Allocator, text: []const u8) !ConstraintParse {
     const toks = try lexer.tokenize(alloc, text);

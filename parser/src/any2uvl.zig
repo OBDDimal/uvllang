@@ -1,17 +1,32 @@
 const std = @import("std");
-const recovery = @import("recovery.zig");
-const smtlib = @import("smtlib.zig");
+const recovery = @import("recovery");
+const smt_reader = @import("smt_reader");
+const term = @import("term");
 
-fn usage() void {
+fn usage(t: term.Style) void {
+    std.debug.print("{s}\n", .{t.bold("usage: any2uvl <input.dimacs|input.smt2> [output.uvl] [options]")});
     std.debug.print(
-        \\usage: any2uvl <input.dimacs|input.smt2> [output.uvl] [-v|--verbose]
-        \\                [--optimize] [--byname] [--verify] [--propagate]
         \\
         \\Recovers a UVL feature model from a DIMACS CNF file or an SMT-LIB 2
         \\file (the dialect uvl2smt itself writes -- not general SMT-LIB 2;
-        \\see parser/src/smtlib.zig). Input format is detected from content,
+        \\see parser/src/smt/reader.zig). Input format is detected from content,
         \\not the file extension. Lexing, parsing, and recovery all run
-        \\natively here -- no Python involved.
+        \\natively here -- no Python involved. If output.uvl is omitted,
+        \\defaults to <input_basename>_recovered.uvl in the current directory.
+        \\
+        \\options:
+        \\
+    , .{});
+    t.option("-v, --verbose", 17, "print variable/clause/constraint counts");
+    t.option("-h, --help", 17, "show this help");
+    t.option("--optimize", 17, "greedy CTC-reduction pass after initial recovery");
+    t.option("--byname", 17, "break parent ties by feature-name similarity");
+    std.debug.print("  {s:<17}(only affects {s})\n", .{ "", t.flag("--optimize") });
+    t.option("--verify", 17, "confirm the output round-trips to an equivalent");
+    t.option("", 17, "CNF (DIMACS input only; see below)");
+    t.option("--propagate", 17, "experimental unit-propagation-based implication");
+    t.option("", 17, "recovery (see recovery.zig)");
+    std.debug.print(
         \\
         \\Hierarchy is reconstructed via a spanning-tree heuristic over the
         \\formula's binary implications and group clauses; remaining clauses
@@ -20,26 +35,50 @@ fn usage() void {
         \\output is always logically equivalent to the input regardless of
         \\hierarchy-recovery quality.
         \\
-        \\--optimize runs a greedy CTC-reduction pass after the initial
-        \\recovery, re-parenting features to shrink the residual constraint
-        \\count.
-        \\--byname breaks equally-shallow parent ties by feature-name
-        \\similarity (only affects --optimize).
-        \\--verify reparses the written UVL and confirms it round-trips to
-        \\an exact-clause-set-equivalent CNF. DIMACS input only -- ignored
-        \\(with a warning) for SMT-LIB input. Combined with --optimize, a
+        \\
+    , .{});
+    std.debug.print("{s}", .{t.flag("--verify")});
+    std.debug.print(
+        \\ reparses the written UVL and confirms it round-trips to
+        \\an exact-clause-set-equivalent CNF. Combined with
+    , .{});
+    std.debug.print(" {s}", .{t.flag("--optimize")});
+    std.debug.print(
+        \\, a
         \\FAIL(missing=N, extra=0) result can be a false positive (the
         \\optimizer's subsumption cleanup can legitimately shrink the
         \\clause set to a logically-but-not-syntactically-equivalent
         \\subset) -- a real defect vs. this pattern can only be told apart
         \\with a SAT-based check, which this binary doesn't perform.
-        \\--propagate enables an experimental, more expensive unit-propagation-
-        \\based implication-recovery pass (see recovery.zig).
-        \\
-        \\If output.uvl is omitted, defaults to <input_basename>_recovered.uvl
-        \\in the current directory.
         \\
     , .{});
+}
+
+/// Rough verbose-only input stat for SMT-LIB: counts top-level forms by
+/// substring, not a real parse -- good enough for -v, not a source of
+/// truth (smt_reader.zig does the actual parsing).
+fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
+    var count: usize = 0;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, haystack, i, needle)) |pos| {
+        count += 1;
+        i = pos + needle.len;
+    }
+    return count;
+}
+
+/// Verbose-only output stat: number of non-empty constraint lines
+/// serializeHierarchy's caller appended after the "constraints\n" header
+/// (there is none if every constraint was dropped or the model had none).
+fn countConstraintLines(uvl_text: []const u8) usize {
+    const marker = "\nconstraints\n";
+    const start = (std.mem.indexOf(u8, uvl_text, marker) orelse return 0) + marker.len;
+    var count: usize = 0;
+    var it = std.mem.splitScalar(u8, uvl_text[start..], '\n');
+    while (it.next()) |line| {
+        if (std.mem.trim(u8, line, " \t\r").len > 0) count += 1;
+    }
+    return count;
 }
 
 fn basename(path: []const u8) []const u8 {
@@ -79,6 +118,7 @@ fn sniffFormat(source: []const u8) Format {
 pub fn main(init: std.process.Init) !u8 {
     const alloc = init.arena.allocator();
     const io = init.io;
+    const t = term.Style.detect(io, init.environ_map);
 
     const args = try init.minimal.args.toSlice(alloc);
 
@@ -88,13 +128,14 @@ pub fn main(init: std.process.Init) !u8 {
     var by_name = false;
     var verify = false;
     var propagate = false;
+    var verbose = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            usage();
+            usage(t);
             return 0;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
-            // accepted for CLI-convention compatibility
+            verbose = true;
         } else if (std.mem.eql(u8, arg, "--optimize")) {
             optimize = true;
         } else if (std.mem.eql(u8, arg, "--byname")) {
@@ -108,13 +149,13 @@ pub fn main(init: std.process.Init) !u8 {
         } else if (out_path == null) {
             out_path = arg;
         } else {
-            usage();
+            usage(t);
             return 1;
         }
     }
 
     const in_file = in_path orelse {
-        usage();
+        usage(t);
         return 1;
     };
     const out_file_name = out_path orelse try std.fmt.allocPrint(
@@ -124,25 +165,43 @@ pub fn main(init: std.process.Init) !u8 {
     );
 
     const source = std.Io.Dir.cwd().readFileAlloc(io, in_file, alloc, .unlimited) catch |err| {
-        std.debug.print("error: could not read '{s}': {t}\n", .{ in_file, err });
+        t.err("could not read '{s}': {t}", .{ in_file, err });
         return 1;
     };
 
     const format = sniffFormat(source);
 
+    if (verbose) {
+        switch (format) {
+            .dimacs => {
+                const parsed = recovery.parseDimacs(alloc, source) catch |err| {
+                    t.err("could not parse DIMACS input: {t}", .{err});
+                    return 1;
+                };
+                t.stat("Read {d} variable(s), {d} clause(s)", .{ parsed.id_to_name.count(), parsed.clauses.items.len });
+            },
+            .smtlib => {
+                t.stat(
+                    "Read {d} declared const(s), {d} assert(s)",
+                    .{ countOccurrences(source, "(declare-const"), countOccurrences(source, "(assert") },
+                );
+            },
+        }
+    }
+
     const out_text = switch (format) {
         .dimacs => recovery.recover(alloc, alloc, source, optimize, by_name, propagate) catch |err| {
-            std.debug.print("error: recovery failed: {t}\n", .{err});
+            t.err("recovery failed: {t}", .{err});
             return 1;
         },
-        .smtlib => smtlib.recoverFromSmt(alloc, alloc, source, optimize, by_name, propagate) catch |err| {
-            std.debug.print("error: recovery failed: {t}\n", .{err});
+        .smtlib => smt_reader.recoverFromSmt(alloc, alloc, source, optimize, by_name, propagate) catch |err| {
+            t.err("recovery failed: {t}", .{err});
             return 1;
         },
     };
 
     var out_file = std.Io.Dir.cwd().createFile(io, out_file_name, .{}) catch |err| {
-        std.debug.print("error: could not create '{s}': {t}\n", .{ out_file_name, err });
+        t.err("could not create '{s}': {t}", .{ out_file_name, err });
         return 1;
     };
     defer out_file.close(io);
@@ -151,43 +210,41 @@ pub fn main(init: std.process.Init) !u8 {
     try writer.interface.writeAll(out_text);
     try writer.interface.flush();
 
-    std.debug.print("Saved UVL to {s}\n", .{out_file_name});
+    if (verbose) {
+        t.stat("Wrote {d} constraint(s)", .{countConstraintLines(out_text)});
+    }
+    t.success("Saved UVL to {s}", .{out_file_name});
 
     if (verify) {
         if (format == .dimacs) {
             const parsed = recovery.parseDimacs(alloc, source) catch |err| {
-                std.debug.print("error: could not re-parse input for --verify: {t}\n", .{err});
+                t.err("could not re-parse input for {s}: {t}", .{ t.flag("--verify"), err });
                 return 1;
             };
             const vr = try recovery.verifyRecovery(alloc, out_text, parsed.clauses.items);
             if (vr.pass()) {
-                std.debug.print("any2uvl: DIMACS PASS ({d} clauses)\n", .{vr.total_orig_clauses});
+                t.success("any2uvl: DIMACS PASS ({d} clauses)", .{vr.total_orig_clauses});
             } else {
-                std.debug.print("any2uvl: DIMACS check FAIL: missing={d} extra={d}\n", .{ vr.missing, vr.extra });
+                t.err("any2uvl: DIMACS check FAIL: missing={d} extra={d}", .{ vr.missing, vr.extra });
                 if (optimize and vr.extra == 0) {
                     std.debug.print(
-                        "  Note: --optimize's residual-CTC subsumption cleanup can legitimately\n" ++
+                        "  Note: {s}'s residual-CTC subsumption cleanup can legitimately\n" ++
                         "  make the recovered clause set a syntactically smaller, logically\n" ++
                         "  equivalent subset (missing>0, extra=0 is this pattern) -- this exact\n" ++
                         "  clause-set check can't tell that apart from a real defect without a\n" ++
                         "  SAT solver; see recovery.verifyRecovery's doc comment.\n",
-                        .{},
+                        .{t.flag("--optimize")},
                     );
                 }
             }
         } else {
-            std.debug.print("Warning: --verify is not supported for SMT-LIB input; skipped\n", .{});
+            t.warn("{s} is not supported for SMT-LIB input; skipped", .{t.flag("--verify")});
         }
     }
 
     return 0;
 }
 
-test {
-    _ = @import("lexer.zig");
-    _ = @import("recovery.zig");
-    _ = @import("smtlib.zig");
-}
 
 test "sniffFormat: DIMACS header and comment lines" {
     try std.testing.expectEqual(Format.dimacs, sniffFormat("p cnf 2 2\n1 0\n"));

@@ -23,8 +23,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const recovery = @import("recovery.zig");
-const constraint = @import("constraint.zig");
+const recovery = @import("recovery");
+const constraint = @import("constraint");
 const ParsedDimacs = recovery.ParsedDimacs;
 
 pub const SExpr = union(enum) {

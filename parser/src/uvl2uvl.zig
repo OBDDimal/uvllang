@@ -1,37 +1,47 @@
 const std = @import("std");
-const lexer = @import("lexer.zig");
-const parser = @import("parser.zig");
-const cnf = @import("cnf.zig");
-const constraint = @import("constraint.zig");
-const subsumption = @import("subsumption.zig");
-const recovery = @import("recovery.zig");
+const lexer = @import("lexer");
+const parser = @import("parser");
+const cnf = @import("cnf");
+const constraint = @import("constraint");
+const subsumption = @import("subsumption");
+const recovery = @import("recovery");
+const term = @import("term");
 
-fn usage() void {
+fn usage(t: term.Style) void {
+    std.debug.print("{s}\n", .{t.bold("usage: uvl2uvl <input.uvl> [output.uvl] [options]")});
     std.debug.print(
-        \\usage: uvl2uvl <input.uvl> [output.uvl] [-v|--verbose]
         \\
         \\Reads a UVL feature model and writes a semantically equivalent UVL
         \\model back out, preserving the input's feature hierarchy exactly
         \\(same tree, same groups) while dropping any cross-tree constraint
         \\that turns out to be redundant given the hierarchy and the other
-        \\constraints. A constraint is dropped only when it's *entirely*
-        \\subsumed away -- every clause it contributes to the underlying CNF
-        \\is a superset of some other surviving clause -- so this can only
-        \\shrink the constraint list, never rewrite what's kept: every
-        \\surviving constraint is emitted verbatim, in its original
-        \\(not-necessarily-CNF) source form.
+        \\constraints. Every surviving constraint is emitted verbatim, in
+        \\its original (not-necessarily-CNF) source form. If output.uvl is
+        \\omitted, defaults to <input_basename>_reduced.uvl in the current
+        \\directory.
         \\
-        \\Redundancy is checked via clause-level subsumption (same
-        \\equivalence-preserving pass as `uvl2cnf --simplify`), which is
-        \\sound but not complete: it will not catch every semantically
-        \\redundant constraint, only ones whose CNF form is a literal
-        \\superset of some other clause already present. Constraints that
-        \\reference a feature attribute or a numeric comparison can't be
-        \\translated to CNF at all and are always kept as-is, since their
-        \\redundancy can't be checked this way.
+        \\options:
         \\
-        \\If output.uvl is omitted, defaults to <input_basename>_reduced.uvl
-        \\in the current directory.
+    , .{});
+    t.option("-v, --verbose", 17, "print feature/constraint counts");
+    t.option("-h, --help", 17, "show this help");
+    std.debug.print(
+        \\
+        \\A constraint is dropped only when it's *entirely* subsumed away --
+        \\every clause it contributes to the underlying CNF is a superset of
+        \\some other surviving clause -- so this can only shrink the
+        \\constraint list, never rewrite what's kept. Redundancy is checked
+        \\via clause-level subsumption (the same equivalence-preserving pass
+        \\as `uvl2cnf
+    , .{});
+    std.debug.print(" {s}", .{t.flag("--simplify")});
+    std.debug.print(
+        \\`), which is sound but not complete: it will
+        \\not catch every semantically redundant constraint, only ones whose
+        \\CNF form is a literal superset of some other clause already
+        \\present. Constraints that reference a feature attribute or a
+        \\numeric comparison can't be translated to CNF at all and are
+        \\always kept as-is, since their redundancy can't be checked this way.
         \\
     , .{});
 }
@@ -55,30 +65,32 @@ const hierarchy_tag: usize = std.math.maxInt(usize);
 pub fn main(init: std.process.Init) !u8 {
     const alloc = init.arena.allocator();
     const io = init.io;
+    const t = term.Style.detect(io, init.environ_map);
 
     const args = try init.minimal.args.toSlice(alloc);
 
     var in_path: ?[]const u8 = null;
     var out_path: ?[]const u8 = null;
+    var verbose = false;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            usage();
+            usage(t);
             return 0;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
-            // accepted for CLI-convention compatibility; nothing extra to gate on it
+            verbose = true;
         } else if (in_path == null) {
             in_path = arg;
         } else if (out_path == null) {
             out_path = arg;
         } else {
-            usage();
+            usage(t);
             return 1;
         }
     }
 
     const in_file = in_path orelse {
-        usage();
+        usage(t);
         return 1;
     };
     const out_file_name = out_path orelse try std.fmt.allocPrint(
@@ -88,44 +100,48 @@ pub fn main(init: std.process.Init) !u8 {
     );
 
     const source = std.Io.Dir.cwd().readFileAlloc(io, in_file, alloc, .unlimited) catch |err| {
-        std.debug.print("error: could not read '{s}': {t}\n", .{ in_file, err });
+        t.err("could not read '{s}': {t}", .{ in_file, err });
         return 1;
     };
 
     const tokens = lexer.tokenize(alloc, source) catch |err| {
-        std.debug.print("error: lex failure: {t}\n", .{err});
+        t.err("lex failure: {t}", .{err});
         return 1;
     };
 
     const result = parser.parseModel(alloc, tokens) catch |err| {
-        std.debug.print("error: parse failure: {t}\n", .{err});
+        t.err("parse failure: {t}", .{err});
         return 1;
     };
 
     const b = &result.builder;
     const root_name = b.root orelse {
-        std.debug.print("error: model has no root feature\n", .{});
+        t.err("model has no root feature", .{});
         return 1;
     };
+
+    if (verbose) {
+        t.stat("Parsed {d} feature(s), {d} constraint(s)", .{ b.features.count(), result.constraints.len });
+    }
 
     // Same Tier 1/3 non-Boolean-construct warnings uvl2cnf prints: these
     // constructs are lost (Tier 1) or ignored (Tier 3) when the hierarchy
     // is round-tripped through Builder.hierarchy today, regardless of this
-    // tool -- see docs/non_boolean_support.md.
+    // tool -- see README.md#non-boolean-constructs.
     if (b.cardinality_group_count > 0) {
-        std.debug.print("Warning: {d} group(s) use a cardinality range ([i..j]); it is not preserved in the output\n", .{b.cardinality_group_count});
+        t.warn("{d} group(s) use a cardinality range ([i..j]); it is not preserved in the output", .{b.cardinality_group_count});
     }
     if (b.constraint_attribute_count > 0) {
-        std.debug.print("Warning: {d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted\n", .{b.constraint_attribute_count});
+        t.warn("{d} feature-local `constraint`/`constraints` attribute(s) were dropped, not converted", .{b.constraint_attribute_count});
     }
     if (b.cardinality_feature_count > 0) {
-        std.debug.print("Warning: {d} feature(s) use a clone cardinality range ([i..j]); it is not preserved in the output\n", .{b.cardinality_feature_count});
+        t.warn("{d} feature(s) use a clone cardinality range ([i..j]); it is not preserved in the output", .{b.cardinality_feature_count});
     }
     if (b.typed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) declare a non-Boolean type; preserved as feature attributes are not re-emitted\n", .{b.typed_feature_count});
+        t.info("{d} feature(s) declare a non-Boolean type; preserved as feature attributes are not re-emitted", .{b.typed_feature_count});
     }
     if (b.attributed_feature_count > 0) {
-        std.debug.print("Info: {d} feature(s) carry value attributes; these are not re-emitted\n", .{b.attributed_feature_count});
+        t.info("{d} feature(s) carry value attributes; these are not re-emitted", .{b.attributed_feature_count});
     }
 
     var ids = try cnf.assignIds(alloc, &b.features);
@@ -190,10 +206,10 @@ pub fn main(init: std.process.Init) !u8 {
         }
     }
     if (attribute_ref_constraints > 0) {
-        std.debug.print("Info: {d} constraint(s) reference a feature attribute; kept as-is (redundancy not checked)\n", .{attribute_ref_constraints});
+        t.info("{d} constraint(s) reference a feature attribute; kept as-is (redundancy not checked)", .{attribute_ref_constraints});
     }
     if (comparison_constraints > 0) {
-        std.debug.print("Info: {d} constraint(s) contain a numeric comparison; kept as-is (redundancy not checked)\n", .{comparison_constraints});
+        t.info("{d} constraint(s) contain a numeric comparison; kept as-is (redundancy not checked)", .{comparison_constraints});
     }
 
     const simplified = try subsumption.simplifyTagged(alloc, all_clauses.items, tags.items, false);
@@ -202,11 +218,11 @@ pub fn main(init: std.process.Init) !u8 {
     @memcpy(drop, vacuous);
 
     if (simplified.unsat) {
-        std.debug.print("Warning: formula is UNSAT (constraints are contradictory); skipping redundancy reduction, writing all constraints unchanged\n", .{});
+        t.warn("formula is UNSAT (constraints are contradictory); skipping redundancy reduction, writing all constraints unchanged", .{});
     } else {
         var survived = std.AutoHashMap(usize, void).init(alloc);
-        for (simplified.tags) |t| {
-            if (t != hierarchy_tag) try survived.put(t, {});
+        for (simplified.tags) |tag| {
+            if (tag != hierarchy_tag) try survived.put(tag, {});
         }
         for (produced, 0..) |p, idx| {
             if (p and !survived.contains(idx)) drop[idx] = true;
@@ -214,7 +230,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     var out_file = std.Io.Dir.cwd().createFile(io, out_file_name, .{}) catch |err| {
-        std.debug.print("error: could not create '{s}': {t}\n", .{ out_file_name, err });
+        t.err("could not create '{s}': {t}", .{ out_file_name, err });
         return 1;
     };
     defer out_file.close(io);
@@ -240,17 +256,9 @@ pub fn main(init: std.process.Init) !u8 {
     try w.flush();
 
     const dropped = result.constraints.len - kept;
-    std.debug.print(
-        "Saved {s}: {d} constraint(s) kept, {d} dropped as redundant (of {d} total)\n",
+    t.success(
+        "Saved {s}: {d} constraint(s) kept, {d} dropped as redundant (of {d} total)",
         .{ out_file_name, kept, dropped, result.constraints.len },
     );
     return 0;
-}
-
-test {
-    _ = @import("lexer.zig");
-    _ = @import("builder.zig");
-    _ = @import("constraint.zig");
-    _ = @import("cnf.zig");
-    _ = @import("subsumption.zig");
 }
