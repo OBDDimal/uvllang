@@ -5,7 +5,7 @@ This lexer preprocesses the input to insert INDENT and DEDENT tokens
 based on indentation levels, similar to Python's indentation handling.
 
 This is a single-pass character scanner rather than a line-split-and-patch
-preprocessor, deliberately mirroring uvllang/uvl_custom_lexer.py's
+preprocessor, deliberately mirroring uvllang/antlr4/uvl_custom_lexer.py's
 (ANTLR's) actual approach: real state (bracket depth, whether we're inside
 a quoted literal) carried across the whole scan, comments and indentation
 resolved together instead of as separate passes that can't see each

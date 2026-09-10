@@ -2,6 +2,28 @@
 Recovery quality tests for any2uvl on the BerkeleyDB feature model.
 
 Thresholds are set to the current known-good values so regressions are caught.
+
+The `uvl2cnf` CLI's global clause-set simplification pass (subsumption
+elimination + self-subsuming resolution by default; see
+README.md#cnf-clause-set-simplification) is opt-in via `--simplify` and off
+by default specifically because either transformation can rewrite or
+remove a hierarchy edge's literal 2-clause, which any2uvl's hierarchy
+reconstruction depends on surviving untouched. The fixture below
+intentionally does not pass `--simplify`, so parent/group recovery works
+correctly.
+
+`UVL.to_cnf()` (the Python API, via `capi.zig`) defaults to the same
+unsimplified behavior as the CLI (a `simplify=True` kwarg opts in, mirroring
+`--simplify`), so the two entry points produce the same clause set for the
+same input by default, and the DIMACS-equivalence tests below need no
+xfail marker.
+
+`_dimacs_equivalent` checks genuine logical equivalence via SAT, not exact
+clause-set identity: `any2uvl --optimize` also runs a subsumption cleanup
+pass over the final residual CTCs (recovery.zig), which can legitimately
+drop a CTC that another surviving clause already subsumes -- the recovered
+and original clause sets can then differ while still being exactly
+equivalent formulas.
 """
 
 import os
@@ -54,19 +76,65 @@ def _extract_hierarchy(uvl_file):
     return parents, groups
 
 
-def _dimacs_equivalent(uvl_file, dimacs_file):
-    orig_cnf = CNF(from_file=dimacs_file)
-    ids2features = {}
-    for comment in orig_cnf.comments:
-        parts = comment.strip().split(None, 2)
-        if len(parts) >= 3:
-            ids2features[int(parts[1])] = parts[2]
-    features2ids = {v: k for k, v in ids2features.items()}
+def _entailed(solver, clause):
+    """True iff `solver`'s clause set entails `clause` (unsat with every
+    literal of `clause` negated as an assumption)."""
+    return not solver.solve(assumptions=[-l for l in clause])
 
-    rec_clauses = UVL(from_file=uvl_file).to_cnf(features2ids).clauses
-    orig = frozenset(tuple(sorted(c)) for c in orig_cnf.clauses)
-    rec  = frozenset(tuple(sorted(c)) for c in rec_clauses)
-    return orig == rec, len(orig - rec), len(rec - orig)
+
+def _dimacs_equivalent(uvl_file, dimacs_file):
+    # orig_cnf and rec_cnf each assign their own ids (whatever produced
+    # dimacs_file numbered it its own way; UVL.to_cnf() always numbers
+    # alphabetically) -- both carry a "c <id> <name>" mapping in their
+    # comments, so clauses are compared by name, renumbered here onto one
+    # shared, freshly assigned id space.
+    orig_cnf = CNF(from_file=dimacs_file)
+    orig_id_to_name = {
+        int(parts[1]): parts[2]
+        for parts in (c.strip().split(None, 2) for c in orig_cnf.comments)
+        if len(parts) >= 3
+    }
+
+    rec_cnf = UVL(from_file=uvl_file).to_cnf()
+    rec_id_to_name = {
+        int(ident): name for _, ident, name in (c.split(" ", 2) for c in rec_cnf.comments)
+    }
+
+    names = sorted(set(orig_id_to_name.values()) | set(rec_id_to_name.values()))
+    ids = {name: i + 1 for i, name in enumerate(names)}
+
+    def _renumbered(clauses, id_to_name):
+        return frozenset(
+            tuple(
+                sorted(
+                    ids[id_to_name[lit]] if lit > 0 else -ids[id_to_name[-lit]]
+                    for lit in clause
+                )
+            )
+            for clause in clauses
+        )
+
+    orig = _renumbered(orig_cnf.clauses, orig_id_to_name)
+    rec = _renumbered(rec_cnf.clauses, rec_id_to_name)
+    missing = orig - rec
+    extra = rec - orig
+
+    if not missing and not extra:
+        return True, 0, 0
+
+    from pysat.solvers import Glucose3
+
+    ok = True
+    if missing:
+        with Glucose3(bootstrap_with=[list(c) for c in rec]) as solver:
+            if not all(_entailed(solver, c) for c in missing):
+                ok = False
+    if extra:
+        with Glucose3(bootstrap_with=[list(c) for c in orig]) as solver:
+            if not all(_entailed(solver, c) for c in extra):
+                ok = False
+
+    return ok, len(missing), len(extra)
 
 
 # ---------------------------------------------------------------------------

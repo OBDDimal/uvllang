@@ -6,12 +6,13 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builder_mod = @import("builder.zig");
+const builder_mod = @import("builder");
 const HInfo = builder_mod.HInfo;
 const ChildEdge = builder_mod.ChildEdge;
 const ChildType = builder_mod.ChildType;
 const GroupEntry = builder_mod.GroupEntry;
-const cnf = @import("cnf.zig");
+const cnf = @import("cnf");
+const subsumption = @import("subsumption");
 
 fn absLess(_: void, a: i32, b: i32) bool {
     return @abs(a) < @abs(b);
@@ -137,14 +138,32 @@ pub const ParsedDimacs = struct {
     clauses: std.ArrayList([]i32),
 };
 
-pub const ParseDimacsError = error{OutOfMemory};
+pub const ParseDimacsError = error{ OutOfMemory, NoHeader };
 
 /// Parses `c <id> <name>` comments (quoting bare multi-word names for
-/// third-party DIMACS files) and clauses (each sorted by abs value).
+/// third-party DIMACS files), the `p cnf <nv> <nc>` header's variable
+/// count, and clauses (each sorted by abs value). Also synthesizes a
+/// placeholder name ("F<id>") for every variable id in `[1, nv]` that has
+/// no `c <id> <name>` comment -- `nv` here is the max of the header's
+/// declared count and every id actually seen (in a comment or a clause
+/// literal), since a hand-written or third-party DIMACS file's header can
+/// undercount its variable count. This guarantees every variable the file
+/// could possibly reference has a name, so a fully free/unconstrained
+/// variable (no clause, no comment) is never silently invisible to the
+/// caller, and no variable-without-a-comment ever causes an `id_to_name`
+/// lookup to fail downstream.
+///
+/// A `p` line must be present at all -- its absence means this isn't a
+/// DIMACS file (e.g. it's UVL or SMT-LIB text), and returns `NoHeader`
+/// rather than silently parsing whatever numeric-looking lines it finds.
 pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDimacs {
     var id_to_name = std.AutoHashMap(i32, []const u8).init(alloc);
     var name_to_id = std.StringHashMap(i32).init(alloc);
     var clauses = std.ArrayList([]i32).empty;
+    var header_nv: i32 = 0;
+    var max_seen_id: i32 = 0;
+
+    var saw_header = false;
 
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line_raw| {
@@ -166,10 +185,19 @@ pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDi
             }
             try id_to_name.put(id, name);
             try name_to_id.put(name, id);
+            if (id > max_seen_id) max_seen_id = id;
             continue;
         }
 
-        if (line[0] == 'p') continue;
+        if (line[0] == 'p') {
+            saw_header = true;
+            var it = std.mem.tokenizeAny(u8, line[1..], " \t");
+            _ = it.next(); // "cnf"
+            if (it.next()) |nv_str| {
+                header_nv = std.fmt.parseInt(i32, nv_str, 10) catch 0;
+            }
+            continue;
+        }
 
         var lits = std.ArrayList(i32).empty;
         var it = std.mem.tokenizeAny(u8, line, " \t");
@@ -177,11 +205,24 @@ pub fn parseDimacs(alloc: Allocator, text: []const u8) ParseDimacsError!ParsedDi
             const v = std.fmt.parseInt(i32, tok, 10) catch continue;
             if (v == 0) continue;
             try lits.append(alloc, v);
+            const av: i32 = @intCast(@abs(v));
+            if (av > max_seen_id) max_seen_id = av;
         }
         if (lits.items.len == 0) continue;
         const owned = try lits.toOwnedSlice(alloc);
         sortByAbs(owned);
         try clauses.append(alloc, owned);
+    }
+
+    if (!saw_header) return ParseDimacsError.NoHeader;
+
+    const nv = @max(header_nv, max_seen_id);
+    var id: i32 = 1;
+    while (id <= nv) : (id += 1) {
+        if (id_to_name.contains(id)) continue;
+        const name = try std.fmt.allocPrint(alloc, "F{d}", .{id});
+        try id_to_name.put(id, name);
+        try name_to_id.put(name, id);
     }
 
     return .{ .id_to_name = id_to_name, .name_to_id = name_to_id, .clauses = clauses };
@@ -413,18 +454,10 @@ fn isXorGroup(clause_set: *const ClauseSet, member_ids: []const i32, alloc: Allo
 
 const WalkFrame = struct { id: i32, parent_name: ?[]const u8, kind: ChildType, is_group_member: bool };
 
-/// Builds the HInfo tree from parents2childs/groups. Group members are
-/// also added as plain (optional) children, matching a real UVL group's
-/// CNF encoding where each member gets its own "member => parent" edge in
-/// addition to the group clause, same shape builder.zig's startFeature
-/// produces for a real parse. A feature's content is only built once; it
-/// can still be reached (and referenced) via more than one path.
-pub fn buildHierarchy(alloc: Allocator, root: i32, parents2childs: *const std.AutoHashMap(i32, std.ArrayList(ChildRef)), groups: *const std.AutoHashMap(i32, std.ArrayList(i32)), id_to_name: *const std.AutoHashMap(i32, []const u8), clause_set: *const ClauseSet) !BuiltHierarchy {
-    var hierarchy = std.StringHashMap(HInfo).init(alloc);
-
-    var stack = std.ArrayList(WalkFrame).empty;
-    try stack.append(alloc, .{ .id = root, .parent_name = null, .kind = .optional, .is_group_member = false });
-
+/// Drains `stack` into `hierarchy`, following parents2childs/groups edges.
+/// Shared by `buildHierarchy`'s initial walk from `root` and its leftover-
+/// grafting pass below.
+fn drainHierarchyStack(alloc: Allocator, hierarchy: *std.StringHashMap(HInfo), stack: *std.ArrayList(WalkFrame), parents2childs: *const std.AutoHashMap(i32, std.ArrayList(ChildRef)), groups: *const std.AutoHashMap(i32, std.ArrayList(i32)), id_to_name: *const std.AutoHashMap(i32, []const u8), clause_set: *const ClauseSet) !void {
     while (stack.pop()) |frame| {
         const name = id_to_name.get(frame.id).?;
         if (frame.parent_name) |pname| {
@@ -465,8 +498,83 @@ pub fn buildHierarchy(alloc: Allocator, root: i32, parents2childs: *const std.Au
             }
         }
     }
+}
 
-    return .{ .hierarchy = hierarchy, .root_name = id_to_name.get(root).? };
+/// True iff `id` is targeted by a parents2childs/groups edge whose source
+/// is itself in `ids` -- i.e. it has a predecessor within the leftover
+/// set, so it'll be reached once that predecessor is grafted and doesn't
+/// need its own direct graft under root.
+fn hasLeftoverPredecessor(id: i32, ids: *const std.AutoHashMap(i32, void), parents2childs: *const std.AutoHashMap(i32, std.ArrayList(ChildRef)), groups: *const std.AutoHashMap(i32, std.ArrayList(i32))) bool {
+    var it = ids.keyIterator();
+    while (it.next()) |src_ptr| {
+        const src = src_ptr.*;
+        if (parents2childs.get(src)) |childs| {
+            for (childs.items) |c| {
+                if (c.id == id) return true;
+            }
+        }
+        if (groups.get(src)) |members| {
+            if (containsI32(members.items, id)) return true;
+        }
+    }
+    return false;
+}
+
+/// Builds the HInfo tree from parents2childs/groups. Group members are
+/// also added as plain (optional) children, matching a real UVL group's
+/// CNF encoding where each member gets its own "member => parent" edge in
+/// addition to the group clause, same shape builder.zig's startFeature
+/// produces for a real parse. A feature's content is only built once; it
+/// can still be reached (and referenced) via more than one path.
+///
+/// Every id in `id_to_name` is guaranteed to end up in the returned
+/// hierarchy: any id the root traversal never reaches (a fully free
+/// variable with no clauses, or one whose only path from root was broken
+/// by a subsumption-eliminated edge) is grafted directly under root as an
+/// optional child instead of being silently dropped from the recovered
+/// model. Grafting picks only the "entry points" of each leftover
+/// connected component (ids with no predecessor within the leftover set
+/// itself), so a leftover subtree is attached once at its top, not
+/// re-listed node-by-node under root.
+pub fn buildHierarchy(alloc: Allocator, root: i32, parents2childs: *const std.AutoHashMap(i32, std.ArrayList(ChildRef)), groups: *const std.AutoHashMap(i32, std.ArrayList(i32)), id_to_name: *const std.AutoHashMap(i32, []const u8), clause_set: *const ClauseSet) !BuiltHierarchy {
+    var hierarchy = std.StringHashMap(HInfo).init(alloc);
+    const root_name = id_to_name.get(root).?;
+
+    var stack = std.ArrayList(WalkFrame).empty;
+    try stack.append(alloc, .{ .id = root, .parent_name = null, .kind = .optional, .is_group_member = false });
+    try drainHierarchyStack(alloc, &hierarchy, &stack, parents2childs, groups, id_to_name, clause_set);
+
+    var leftover = std.AutoHashMap(i32, void).init(alloc);
+    var id_it = id_to_name.iterator();
+    while (id_it.next()) |e| {
+        const id = e.key_ptr.*;
+        if (id == root) continue;
+        if (!hierarchy.contains(e.value_ptr.*)) try leftover.put(id, {});
+    }
+
+    if (leftover.count() > 0) {
+        var graft_ids = std.ArrayList(i32).empty;
+        var lit = leftover.keyIterator();
+        while (lit.next()) |id_ptr| {
+            if (!hasLeftoverPredecessor(id_ptr.*, &leftover, parents2childs, groups)) {
+                try graft_ids.append(alloc, id_ptr.*);
+            }
+        }
+        // Pathological case (a cycle entirely within the leftover set, so
+        // every id has a predecessor): fall back to grafting everything
+        // rather than dropping the whole component.
+        if (graft_ids.items.len == 0) {
+            var lit2 = leftover.keyIterator();
+            while (lit2.next()) |id_ptr| try graft_ids.append(alloc, id_ptr.*);
+        }
+        std.mem.sort(i32, graft_ids.items, {}, std.sort.asc(i32));
+        for (graft_ids.items) |gid| {
+            try stack.append(alloc, .{ .id = gid, .parent_name = root_name, .kind = .optional, .is_group_member = false });
+        }
+        try drainHierarchyStack(alloc, &hierarchy, &stack, parents2childs, groups, id_to_name, clause_set);
+    }
+
+    return .{ .hierarchy = hierarchy, .root_name = root_name };
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,9 +1234,31 @@ pub const RecoverError = error{NoRoot} || Allocator.Error;
 /// tearing down its arena); out_alloc allocates the returned UVL text so
 /// it survives that teardown.
 pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u8, optimize: bool, by_name: bool) ![]const u8 {
+    const parsed = try parseDimacs(scratch_alloc, dimacs);
+    return recoverFromParsed(scratch_alloc, out_alloc, parsed, optimize, by_name, &.{});
+}
+
+/// Core of `recover()`, taking an already-parsed clause set instead of
+/// raw DIMACS text -- lets any front end that can produce a `ParsedDimacs`
+/// shape (feature ids/names + `[]const i32` clauses) reuse the entire
+/// hierarchy-recovery pipeline below unchanged. Used by `recover()` itself
+/// (DIMACS) and by `smtlib.recoverFromSmt` (SMT-LIB 2), which flattens the
+/// input's Boolean-only asserts into clauses the same way and passes
+/// anything it can't flatten (an Int/String/`ite`-involving assert) as
+/// `extra_constraints` -- raw UVL constraint-syntax text lines appended to
+/// the output verbatim, after the CNF-derived residual CTCs, the same
+/// "never silently drop it" policy `uvl2uvl` uses for content it can't
+/// judge.
+pub fn recoverFromParsed(
+    scratch_alloc: Allocator,
+    out_alloc: Allocator,
+    parsed: ParsedDimacs,
+    optimize: bool,
+    by_name: bool,
+    extra_constraints: []const []const u8,
+) ![]const u8 {
     const alloc = scratch_alloc;
-    const parsed = try parseDimacs(alloc, dimacs);
-    const graph = try buildGraph(alloc, parsed.clauses.items);
+    var graph = try buildGraph(alloc, parsed.clauses.items);
 
     // A unit clause can be negative ("this feature must be unselected"),
     // which isn't a root candidate: there's no feature id to attach to
@@ -1180,9 +1310,35 @@ pub fn recover(scratch_alloc: Allocator, out_alloc: Allocator, dimacs: []const u
     for (parsed.clauses.items) |c| {
         if (!hier_set.contains(c)) try ctc_clauses.append(alloc, c);
     }
+    // With --optimize, the greedy re-parenting pass leaves whatever residual
+    // CTCs it couldn't absorb into the tree, but never itself removes a CTC
+    // that a *different* CTC already subsumes (that's an orthogonal
+    // simplification, not a re-parenting move). Running the same
+    // equivalence-preserving global subsumption pass used elsewhere in the
+    // pipeline (see README.md#cnf-clause-set-simplification) over just this residual
+    // set cleans that up. Safe without a satisfiability check: ctc_clauses
+    // is a subset of the original (necessarily satisfiable) parsed.clauses,
+    // so it can never turn out UNSAT on its own. Baseline (non-optimized)
+    // output is left as-is, matching its existing "literal residual" contract.
+    if (optimize) {
+        const simplified = try subsumption.simplify(alloc, ctc_clauses.items, false);
+        ctc_clauses = std.ArrayList([]const i32).empty;
+        for (simplified.clauses) |c| try ctc_clauses.append(alloc, c);
+    }
     const n_ctcs = try writeResidualCtcs(alloc, &aw.writer, ctc_clauses.items, &parsed.id_to_name);
     if (optimize) {
         std.debug.print("optimize_from_cnf: {d} CTCs remaining\n", .{n_ctcs});
+    }
+
+    if (extra_constraints.len > 0) {
+        // writeResidualCtcs only opens the "constraints" block itself
+        // when it has clauses of its own to write.
+        if (n_ctcs == 0) try aw.writer.writeAll("\n\nconstraints\n");
+        for (extra_constraints) |c| {
+            try aw.writer.writeAll("    ");
+            try aw.writer.writeAll(c);
+            try aw.writer.writeByte('\n');
+        }
     }
 
     return try aw.toOwnedSlice();
@@ -1240,4 +1396,21 @@ test "group detection rejects ambiguous multi-parent member sets" {
     try std.testing.expect(graph.groups.contains(1));
     const members = graph.groups.get(1).?;
     try std.testing.expectEqual(@as(usize, 3), members.items.len);
+}
+
+test "parseDimacs rejects input with no `p` header line (e.g. non-DIMACS)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try std.testing.expectError(ParseDimacsError.NoHeader, parseDimacs(alloc, "1 2 0\n-1 0\n"));
+}
+
+test "parseDimacs accepts a header-only, clause-only DIMACS file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const parsed = try parseDimacs(alloc, "p cnf 1 1\n1 0\n");
+    try std.testing.expectEqual(@as(usize, 1), parsed.clauses.items.len);
 }

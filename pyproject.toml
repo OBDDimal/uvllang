@@ -4,37 +4,53 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uvllang"
-version = "0.3.1"
+version = "0.4.0"
 description = "Parser for the Universal Variability Language (UVL) with conversion support to CNF/SMT"
 readme = "README.md"
 license = "LGPL-3.0-or-later"
 authors = [
     {name = "h3ssto", email = "tobias.hess@variability.dev"},
-    {name = "UVL Team", email = "jagalindo@us.es"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
-requires-python = ">=3.0"
+requires-python = ">=3.9"
 dependencies = [
-    "lark>=1.1.0",
     "python-sat>=0.1.8.dev13",
 ]
 
+[project.urls]
+Homepage = "https://github.com/OBDDimal/uvllang"
+Repository = "https://github.com/OBDDimal/uvllang"
+Issues = "https://github.com/OBDDimal/uvllang/issues"
+
 [project.optional-dependencies]
+# "zig" is the default, always-available backend (uvllang._zig, the
+# compiled native binaries) and needs neither extra below. "lark" and
+# "antlr" are both legacy, opt-in backends kept for comparison/API
+# compatibility (see UVL's docstring in uvllang/uvl.py) -- neither is
+# installed by default, and each is gated the same way: UVL(backend=...)
+# raises a clean ImportError naming the extra to install if its package
+# is missing.
+lark = [
+    "lark>=1.1.0",
+]
 antlr = [
     "antlr4-python3-runtime==4.13.1",
 ]
 dev = [
     "pytest>=7.0",
     "z3-solver>=4.12.0",
+    "black>=24.0",
+    "uvllang[lark,antlr]",
 ]
 
-[project.scripts]
-uvl2cnf = "uvllang.cli:uvl2cnf"
-uvl2smt = "uvllang.cli:uvl2smt"
-any2uvl = "uvllang.cli:any2uvl"
+# uvl2cnf/uvl2uvl/uvl2smt/any2uvl are NOT Python entry points: they're the
+# native binaries at parser/zig-out/bin/{uvl2cnf,uvl2uvl,uvl2smt,any2uvl}
+# (built by `zig build` in parser/), installed onto PATH (e.g. into
+# .venv/bin/) via setup.py's scripts=, not generated as entry-point
+# wrapper scripts by setuptools.
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -42,7 +58,14 @@ include = ["uvllang*"]
 exclude = ["tests*", "examples*"]
 
 [tool.setuptools.package-data]
-uvllang = ["../grammars/uvl.lark"]
+# "../grammars/uvl.lark": the Lark grammar, needed by backend="lark".
+# "_zig_libs/*": the compiled shared library -- placed there by setup.py's
+# build hook (_bundle_lib()) so it's a real file for this to collect, not
+# checked into the repo; see uvllang/_zig.py's module docstring.
+uvllang = ["../grammars/uvl.lark", "_zig_libs/*"]
 
 [tool.setuptools]
 py-modules = []
+
+[tool.black]
+line-length = 88

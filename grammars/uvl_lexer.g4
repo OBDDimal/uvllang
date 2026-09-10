@@ -68,7 +68,7 @@ COMMA: ',';
 DOT: '.';
 
 ID_NOT_STRICT: '"'~[\r\n".]+'"';
-ID_STRICT: [a-zA-Z]([a-zA-Z0-9_#§%?\\'äüöß;])*;
+ID_STRICT: [a-zA-Z_]([a-zA-Z0-9_#§%?\\'äüöß;])*;
 
 STRING: ('"' ~["\r\n]* '"') | ('\'' ~['\r\n]* '\'');
 

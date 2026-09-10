@@ -1,13 +1,5 @@
-## v0.2.3
-
-### Bug Fixes
-* Reimplemented hierarchy detection in cnf2uvl
-
-## v0.2.2
-
-### Features
-* Removed sympy dependency
-* WIP any2uvl reverse converter
-
-### Bug Fixes
-* Fixed handling of complex and mixed constraints
+# Pre
+## v0.4.0
+* Support for pyodide
+* Zig backend for handling UVL <-> DIMACS, SMT-2
+* Some support for higher language levels

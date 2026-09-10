@@ -1,0 +1,23 @@
+namespace Comments
+
+features
+    Root 
+        mandatory
+            A
+
+        // a comment sitting alone between two sibling groups
+        optional
+            "weird//name"
+            /* a single block comment, spanning multiple lines,
+               indented differently than the surrounding code.
+               Note: block comments here match greedily through to the
+               LAST "*/" in the whole file, mirroring the ANTLR grammar's
+               `OPEN_COMMENT .* CLOSE_COMMENT` -- this must be the only
+               one in the file, or an earlier one would swallow it too. */
+            C
+            D
+
+constraints
+    A => Root
+    "weird//name" => C
+    C | D
