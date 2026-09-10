@@ -426,6 +426,50 @@ def test_loud_with_conversion_succeeds_on_group_cardinality(zig_parser, tmp_path
     assert result.returncode == 0, result.stderr
 
 
+# {A|B} and {A=>(B|C)} (i.e. {1,2} and {-1,2,3} once ids are assigned
+# alphabetically) are the minimal SSR example from subsumption.zig's own
+# unit tests: plain subsumption changes neither clause (neither is a
+# subset of the other), but SSR strengthens {-1,2,3} into {2,3} -- a
+# genuinely different, not just smaller, final clause set.
+_SSR_TRIGGERING_UVL = (
+    "features\n    Root\n        optional\n            A\n            B\n            C\n"
+    "\nconstraints\n    A | B\n    A => (B | C)\n"
+)
+
+
+def test_simplify_runs_ssr_by_default(zig_parser, tmp_path):
+    uvl_path = tmp_path / "model.uvl"
+    uvl_path.write_text(_SSR_TRIGGERING_UVL)
+    out_path = tmp_path / "out.dimacs"
+    result = subprocess.run(
+        [zig_parser, "--simplify", str(uvl_path), str(out_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "self-subsuming resolution" in result.stderr
+    clauses, _ = _read_dimacs(str(out_path))
+    assert frozenset({-1, 2, 3}) not in clauses
+    assert frozenset({2, 3}) in clauses
+
+
+def test_simplify_no_ssr_skips_self_subsuming_resolution(zig_parser, tmp_path):
+    uvl_path = tmp_path / "model.uvl"
+    uvl_path.write_text(_SSR_TRIGGERING_UVL)
+    out_path = tmp_path / "out.dimacs"
+    result = subprocess.run(
+        [zig_parser, "--simplify", "--no-ssr", str(uvl_path), str(out_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "self-subsuming resolution" not in result.stderr
+    assert "subsumption" in result.stderr
+    clauses, _ = _read_dimacs(str(out_path))
+    assert frozenset({-1, 2, 3}) in clauses
+    assert frozenset({2, 3}) not in clauses
+
+
 def test_is_non_boolean_threatening_matches_uvl_drop_non_boolean():
     """uvllang._zig.is_non_boolean_threatening (ctypes -> capi.zig's
     NonBooleanCounts.isThreatening) is the single source of truth

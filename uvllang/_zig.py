@@ -126,6 +126,7 @@ def _load_lib():
         ctypes.c_size_t,
         ctypes.c_uint8,
         ctypes.c_uint8,
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(ctypes.c_size_t),
         ctypes.POINTER(_CNonBooleanCounts),
@@ -148,6 +149,7 @@ def _load_lib():
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char_p),
         ctypes.c_size_t,
+        ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_void_p),
@@ -212,7 +214,9 @@ def _take_buffer(lib, out_ptr, out_len):
         lib.uvl_free_buffer(out_ptr, out_len)
 
 
-def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = False):
+def parse_source_to_cnf(
+    source: str, simplify: bool = False, no_ssr: bool = False, conversion: bool = False
+):
     """Full pipeline: UVL source text -> (non_boolean, raw_dimacs).
 
     `raw_dimacs` is zig's own DIMACS bytes (writeDimacs, parser/src/cnf/cnf.zig)
@@ -226,11 +230,14 @@ def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = 
     time this returns; the caller decides whether any of them should also
     raise.
 
-    `simplify` gates the global subsumption/SSR-disabled clause-set
-    simplification pass (see README.md#cnf-clause-set-simplification) -- off by
-    default, matching the `uvl2cnf` CLI's `--simplify` flag, so this API
-    and the CLI produce the same clause set for the same input unless the
-    caller explicitly opts in.
+    `simplify` gates the global subsumption-elimination + self-subsuming
+    resolution clause-set simplification pass (see
+    README.md#cnf-clause-set-simplification) -- off by default, matching
+    the `uvl2cnf` CLI's `--simplify` flag, so this API and the CLI produce
+    the same clause set for the same input unless the caller explicitly
+    opts in. `no_ssr`, when `simplify` is set, skips self-subsuming
+    resolution and keeps plain subsumption elimination only, matching
+    `uvl2cnf --simplify --no-ssr`; ignored when `simplify` is False.
 
     `conversion` gates the UVLParser-paper conversion strategies for group
     cardinality and feature-local constraint attributes (see
@@ -246,6 +253,7 @@ def parse_source_to_cnf(source: str, simplify: bool = False, conversion: bool = 
         src_bytes,
         len(src_bytes),
         1 if simplify else 0,
+        1 if no_ssr else 0,
         1 if conversion else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),
@@ -434,6 +442,7 @@ def hierarchy_to_cnf(
     feature_hierarchy,
     constraints,
     simplify: bool = False,
+    no_ssr: bool = False,
     conversion: bool = False,
     cardinality_groups=None,
 ):
@@ -443,7 +452,8 @@ def hierarchy_to_cnf(
 
     features: list[str], every feature name (quotes included if quoted).
     root: str | None, the root feature name.
-    simplify: see parse_source_to_cnf -- off by default, same semantics.
+    simplify/no_ssr: see parse_source_to_cnf -- off by default, same
+        semantics.
     feature_hierarchy: dict as produced by BaseFeatureModelBuilder, e.g.
         {parent: {"children": [(child, "mandatory"/"optional"), ...],
                   "groups": [("or"/"xor"/..., [member, ...]), ...]}}.
@@ -545,6 +555,7 @@ def hierarchy_to_cnf(
         cons_arr,
         len(cons_bytes),
         1 if simplify else 0,
+        1 if no_ssr else 0,
         1 if conversion else 0,
         ctypes.byref(out_ptr),
         ctypes.byref(out_len),

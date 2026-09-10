@@ -65,8 +65,11 @@ class UVL:
     Sundermann et al., SPLC'23), on every backend; feature cardinality is
     still dropped.
 
-    simplify=True additionally runs the global subsumption/SSR pass
-    (README.md#cnf-clause-set-simplification).
+    simplify=True additionally runs the global subsumption-elimination +
+    self-subsuming resolution pass (README.md#cnf-clause-set-simplification).
+    no_ssr=True, combined with simplify=True, skips self-subsuming
+    resolution and keeps plain subsumption elimination only; ignored
+    otherwise.
     """
 
     def __init__(
@@ -78,6 +81,7 @@ class UVL:
         backend=None,
         drop_non_boolean=False,
         simplify=False,
+        no_ssr=False,
         conversion=False,
         optimize=False,
         by_name=False,
@@ -118,6 +122,7 @@ class UVL:
         self._backend = backend
         self._drop_non_boolean = drop_non_boolean
         self._simplify = simplify
+        self._no_ssr = no_ssr
         self._conversion = conversion
         self._file_path = from_file
         self._content = from_str
@@ -164,7 +169,10 @@ class UVL:
 
         if self._backend == "zig":
             self._non_boolean, self._zig_dimacs = _zig.parse_source_to_cnf(
-                self._source, simplify=self._simplify, conversion=self._conversion
+                self._source,
+                simplify=self._simplify,
+                no_ssr=self._no_ssr,
+                conversion=self._conversion,
             )
             return
 
@@ -189,6 +197,7 @@ class UVL:
             self._builder.feature_hierarchy,
             constraints,
             simplify=self._simplify,
+            no_ssr=self._no_ssr,
             conversion=self._conversion,
             cardinality_groups=self._builder.cardinality_groups,
         )

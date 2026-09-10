@@ -18,14 +18,30 @@ fn usage(t: term.Style) void {
     , .{});
     t.option("-v, --verbose", 17, "prints statistics");
     t.option("-h, --help", 17, "shows this help");
-    t.option("--simplify", 17, "removes redundant/subsumed clauses");
+    t.option("--simplify", 17, "removes redundant/subsumed clauses (incl. self-subsuming resolution)");
+    t.option("--no-ssr", 17, "with --simplify, skips self-subsuming resolution");
     t.option("--conversion", 17, "converts some non-Boolean constructs instead of dropping them");
     t.option("--loud", 17, "exits with an error instead of warnings when dropping non-Boolean constructs");
     std.debug.print("\n{s}", .{t.flag("--simplify")});
     std.debug.print(
-        \\ runs a global subsumption-elimination pass over the
-        \\ full clause set (hierarchy + constraints) before writing it out,
-        \\ removing redundant/subsumed clauses
+        \\ runs a global simplification pass over the full
+        \\ clause set (hierarchy + constraints) before writing it out:
+        \\ subsumption elimination (a clause entirely implied by a shorter
+        \\ one already present is removed) and self-subsuming resolution
+        \\ (a clause is rewritten to drop a literal made redundant by
+        \\ another clause). Both are exact logical-equivalence
+        \\ transformations (same satisfying assignments, not just
+        \\ equisatisfiability), but either can remove or rewrite the
+        \\ literal 2-clause `any2uvl` pattern-matches for a hierarchy edge,
+        \\ replacing it with a cross-tree constraint in a later recovery --
+        \\ pass
+    , .{});
+    std.debug.print(" {s}", .{t.flag("--no-ssr")});
+    std.debug.print(
+        \\ to keep plain subsumption
+        \\ elimination only -- note this does not avoid the risk above,
+        \\ subsumption elimination alone can already drop that literal
+        \\ clause.
         \\
         \\
     , .{});
@@ -65,6 +81,7 @@ pub fn main(init: std.process.Init) !u8 {
     var out_path: ?[]const u8 = null;
     var parse_only = false;
     var do_simplify = false;
+    var no_ssr = false;
     var do_conversion = false;
     var do_loud = false;
     var verbose = false;
@@ -79,6 +96,8 @@ pub fn main(init: std.process.Init) !u8 {
             parse_only = true;
         } else if (std.mem.eql(u8, arg, "--simplify")) {
             do_simplify = true;
+        } else if (std.mem.eql(u8, arg, "--no-ssr")) {
+            no_ssr = true;
         } else if (std.mem.eql(u8, arg, "--conversion")) {
             do_conversion = true;
         } else if (std.mem.eql(u8, arg, "--loud")) {
@@ -141,7 +160,7 @@ pub fn main(init: std.process.Init) !u8 {
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;
     if (do_simplify) {
-        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        const simplified = try subsumption.simplify(alloc, cclauses, !no_ssr);
         if (simplified.removed_by_subsumption > 0) {
             t.info("Removed {d} clause(s) via subsumption", .{simplified.removed_by_subsumption});
         }

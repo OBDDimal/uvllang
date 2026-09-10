@@ -536,6 +536,48 @@ constraints
         assert len(model.to_cnf().clauses) == 10311
 
 
+class TestSimplify:
+    """simplify=True runs the global clause-set simplification pass
+    (subsumption elimination + self-subsuming resolution by default);
+    no_ssr=True keeps subsumption elimination only -- see
+    README.md#cnf-clause-set-simplification."""
+
+    # {A|B} and {A=>(B|C)} (i.e. {1,2} and {-1,2,3} once ids are assigned
+    # alphabetically) are the minimal SSR example from subsumption.zig's
+    # own unit tests: plain subsumption changes neither clause (neither is
+    # a subset of the other), but SSR strengthens {-1,2,3} into {2,3} --
+    # a genuinely different, not just smaller, final clause set.
+    SSR_TRIGGERING_UVL = (
+        "features\n    Root\n        optional\n            A\n            B\n            C\n"
+        "\nconstraints\n    A | B\n    A => (B | C)\n"
+    )
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_no_ssr_without_simplify_is_a_no_op(self, backend):
+        with_no_ssr = UVL(
+            from_str=self.SSR_TRIGGERING_UVL, backend=backend, no_ssr=True
+        )
+        without = UVL(from_str=self.SSR_TRIGGERING_UVL, backend=backend)
+        assert {tuple(sorted(c)) for c in with_no_ssr.to_cnf().clauses} == {
+            tuple(sorted(c)) for c in without.to_cnf().clauses
+        }
+
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_simplify_runs_ssr_by_default(self, backend):
+        simplified = UVL(
+            from_str=self.SSR_TRIGGERING_UVL, backend=backend, simplify=True
+        )
+        no_ssr = UVL(
+            from_str=self.SSR_TRIGGERING_UVL,
+            backend=backend,
+            simplify=True,
+            no_ssr=True,
+        )
+        simplified_clauses = {tuple(sorted(c)) for c in simplified.to_cnf().clauses}
+        no_ssr_clauses = {tuple(sorted(c)) for c in no_ssr.to_cnf().clauses}
+        assert simplified_clauses != no_ssr_clauses
+
+
 class TestConversion:
     """conversion=True applies the UVLParser paper's conversion strategies
     for group cardinality and feature-local constraint attributes instead

@@ -9,6 +9,8 @@ bundled SAT solvers before the standard build runs (a custom `build`
 command subclass, hooked in via `cmdclass`, that does the native compile
 step and then calls the normal build) -- so uvl2cnf/uvl2uvl/uvl2smt/any2uvl end up on PATH
 as real installed scripts without a separate manual `zig build` step.
+The same hook is applied to `editable_wheel` (`pip install -e .`), which
+bypasses the `build` command entirely and needs it separately.
 """
 
 import glob
@@ -149,6 +151,25 @@ class build(_build):
             _exclude_legacy_backends(self.build_lib)
 
 
+try:
+    from setuptools.command.editable_wheel import editable_wheel as _editable_wheel
+
+    class editable_wheel(_editable_wheel):
+        """`pip install -e .` never invokes the `build` command above --
+        it calls build_py/build_ext/build_scripts directly from its own
+        run(), so build_zig() would otherwise never run and build_scripts
+        would fail trying to copy binaries that don't exist yet. Same
+        hook as `build`, applied here too.
+        """
+
+        def run(self):
+            build_zig()
+            super().run()
+
+except ImportError:
+    editable_wheel = None
+
+
 class BinaryDistribution(Distribution):
     """Tells setuptools/wheel this distribution isn't pure Python, despite
     having no ext_modules -- the compiled shared library only ever reaches
@@ -203,6 +224,8 @@ class build_scripts(distutils.command.build_scripts.build_scripts):
 _cmdclass = {"build": build, "build_scripts": build_scripts}
 if bdist_wheel is not None:
     _cmdclass["bdist_wheel"] = bdist_wheel
+if editable_wheel is not None:
+    _cmdclass["editable_wheel"] = editable_wheel
 
 setup(
     distclass=BinaryDistribution,

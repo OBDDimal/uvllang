@@ -99,6 +99,7 @@ fn sourceToCnfImpl(
     alloc: Allocator,
     source: []const u8,
     do_simplify: bool,
+    no_ssr: bool,
     do_conversion: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
@@ -116,7 +117,7 @@ fn sourceToCnfImpl(
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;
     if (do_simplify) {
-        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        const simplified = try subsumption.simplify(alloc, cclauses, !no_ssr);
         if (simplified.removed_by_subsumption > 0) pipeline.dbgPrint("Info: Removed {d} clause(s) via subsumption\n", .{simplified.removed_by_subsumption});
         if (simplified.literals_removed_by_ssr > 0) pipeline.dbgPrint("Info: Removed {d} literal(s) via self-subsuming resolution\n", .{simplified.literals_removed_by_ssr});
         if (simplified.tautologies_removed > 0) pipeline.dbgPrint("Info: Removed {d} tautological clause(s)\n", .{simplified.tautologies_removed});
@@ -134,11 +135,14 @@ fn sourceToCnfImpl(
     out_len.* = owned.len;
 }
 
-/// `do_simplify`: gates the global subsumption/SSR-disabled simplify pass,
-/// matching the `uvl2cnf` CLI's `--simplify` flag -- off by default there
-/// and here, so the CLI and the Python API produce the same clause set for
-/// the same input unless the caller explicitly opts in. See
-/// README.md#cnf-clause-set-simplification.
+/// `do_simplify`: gates the global subsumption/SSR simplify pass, matching
+/// the `uvl2cnf` CLI's `--simplify` flag -- off by default there and here,
+/// so the CLI and the Python API produce the same clause set for the same
+/// input unless the caller explicitly opts in. See
+/// README.md#cnf-clause-set-simplification. `no_ssr`, when `do_simplify`
+/// is set, skips self-subsuming resolution and keeps plain subsumption
+/// elimination only, matching `uvl2cnf --simplify --no-ssr`; ignored when
+/// `do_simplify` is unset.
 /// `do_conversion`: gates the UVLParser-paper conversion strategies for
 /// group cardinality and feature-local constraint attributes, matching
 /// the `uvl2cnf` CLI's `--conversion` flag -- off by default, so both
@@ -148,6 +152,7 @@ export fn uvl_source_to_cnf(
     src_ptr: [*]const u8,
     src_len: usize,
     do_simplify: u8,
+    no_ssr: u8,
     do_conversion: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
@@ -155,7 +160,7 @@ export fn uvl_source_to_cnf(
 ) callconv(.c) i32 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
-    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], do_simplify != 0, do_conversion != 0, out_ptr, out_len, out_non_boolean) catch |err| {
+    sourceToCnfImpl(arena_state.allocator(), src_ptr[0..src_len], do_simplify != 0, no_ssr != 0, do_conversion != 0, out_ptr, out_len, out_non_boolean) catch |err| {
         setError("uvl_source_to_cnf: {t}", .{err});
         return @intFromEnum(statusForError(err));
     };
@@ -355,6 +360,7 @@ fn hierarchyToCnfImpl(
     cardinality_group_members: []const usize,
     constraints: []const [*:0]const u8,
     do_simplify: bool,
+    no_ssr: bool,
     do_conversion: bool,
     out_ptr: *[*]const u8,
     out_len: *usize,
@@ -462,7 +468,7 @@ fn hierarchyToCnfImpl(
     const cclauses: []const []const i32 = @ptrCast(clauses.items);
     var out_clauses: []const []const i32 = cclauses;
     if (do_simplify) {
-        const simplified = try subsumption.simplify(alloc, cclauses, false);
+        const simplified = try subsumption.simplify(alloc, cclauses, !no_ssr);
         out_clauses = simplified.clauses;
     }
 
@@ -509,6 +515,7 @@ export fn uvl_hierarchy_to_cnf(
     constraints_ptr: [*]const [*:0]const u8,
     n_constraints: usize,
     do_simplify: u8,
+    no_ssr: u8,
     do_conversion: u8,
     out_ptr: *[*]const u8,
     out_len: *usize,
@@ -527,6 +534,7 @@ export fn uvl_hierarchy_to_cnf(
         cardinality_group_members_ptr[0..n_cardinality_group_members],
         constraints_ptr[0..n_constraints],
         do_simplify != 0,
+        no_ssr != 0,
         do_conversion != 0,
         out_ptr,
         out_len,

@@ -9,7 +9,7 @@ fn usage(t: term.Style) void {
         \\
         \\Recovers a UVL feature model from a DIMACS CNF file or an SMT-LIB 2
         \\file (the dialect uvl2smt itself writes, not general SMT-LIB 2).
-        \\Defaults to ./<input_basename>_recovered.uvl if output.uvl is omitted.S
+        \\Defaults to ./<input_basename>_recovered.uvl if output.uvl is omitted.
         \\
         \\Options:
         \\

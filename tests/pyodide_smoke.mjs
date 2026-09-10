@@ -50,13 +50,13 @@ if (SRC_OFF + srcBytes.length > MEMORY_BASE) {
 }
 new Uint8Array(memory.buffer, SRC_OFF, srcBytes.length).set(srcBytes);
 
-// uvl_source_to_cnf(source_ptr, source_len, simplify, conversion,
+// uvl_source_to_cnf(source_ptr, source_len, simplify, no_ssr, conversion,
 //                    out_ptr, out_len, out_non_boolean) -> i32
 new DataView(memory.buffer).setInt32(OUT_PTR_OFF, 0, true);
 
 const rc = instance.exports.uvl_source_to_cnf(
   SRC_OFF, srcBytes.length,
-  0, 0,
+  0, 0, 0,
   OUT_PTR_OFF, OUT_LEN_OFF, OUT_NB_OFF,
 );
 

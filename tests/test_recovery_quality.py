@@ -4,12 +4,13 @@ Recovery quality tests for any2uvl on the BerkeleyDB feature model.
 Thresholds are set to the current known-good values so regressions are caught.
 
 The `uvl2cnf` CLI's global clause-set simplification pass (subsumption
-elimination; see README.md#cnf-clause-set-simplification) is opt-in via `--simplify`
-and off by default specifically because its canonical output literal order
-(and, if ever enabled, self-subsuming resolution) breaks any2uvl's hierarchy
-reconstruction, which depends on hierarchy edges surviving as
-untouched/positionally-stable clauses. The fixture below intentionally does
-not pass `--simplify`, so parent/group recovery works correctly.
+elimination + self-subsuming resolution by default; see
+README.md#cnf-clause-set-simplification) is opt-in via `--simplify` and off
+by default specifically because either transformation can rewrite or
+remove a hierarchy edge's literal 2-clause, which any2uvl's hierarchy
+reconstruction depends on surviving untouched. The fixture below
+intentionally does not pass `--simplify`, so parent/group recovery works
+correctly.
 
 `UVL.to_cnf()` (the Python API, via `capi.zig`) defaults to the same
 unsimplified behavior as the CLI (a `simplify=True` kwarg opts in, mirroring
