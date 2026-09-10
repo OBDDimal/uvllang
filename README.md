@@ -174,17 +174,17 @@ pytest tests/
 
 ## Releasing
 
-`scripts/release.sh` builds everything `twine upload` needs - the sdist, the native wheel, a manylinux-repaired copy of it, and the Pyodide/wasm32 wheel - into `dist/`, validated with `twine check`. It doesn't upload anything; review `dist/` and run `twine upload dist/*` yourself.
+`scripts/release.sh` builds everything `twine upload` needs - the sdist, the native wheel, and the Pyodide/wasm32 wheel - into `dist/`, validated with `twine check`. It doesn't upload anything; review `dist/` and run `twine upload dist/*` yourself.
 
 ```bash
-pip install auditwheel patchelf pyodide-build   # patchelf ships a bundled binary, no system package needed
+pip install build twine pyodide-build
 pyodide xbuildenv install-emscripten            # pyodide-build's own correctly-pinned Emscripten --
                                                  # do NOT rely on a system/distro emscripten package,
                                                  # it will almost certainly be the wrong version
 scripts/release.sh
 ```
 
-The script aborts before building anything if a required tool for either non-native step is missing, rather than silently producing a partial `dist/` - pass `--skip-manylinux`/`--skip-pyodide` to opt out of a step on purpose instead.
+The native wheel is tagged `manylinux2014` directly by `setup.py` - the Zig artifacts are fully statically linked (no libc dependency), so no `auditwheel` repair step or manylinux build container is needed. The script aborts before building anything if `pyodide` is missing rather than silently producing a partial `dist/` - pass `--skip-pyodide` to opt out on purpose instead.
 
 ## References
 

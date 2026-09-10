@@ -1,40 +1,31 @@
 #!/usr/bin/env bash
-# Builds everything `twine upload` needs: the sdist, a manylinux-repaired
-# native wheel, and a Pyodide/wasm32 wheel -- all left in dist/, validated
-# with `twine check`. Aborts up front, before building anything, if a
-# required tool for either non-native step is missing -- a silently
-# incomplete dist/ (e.g. no wasm wheel, with no indication why) is worse
-# than a loud failure. Pass --skip-manylinux/--skip-pyodide to opt out of
-# a step on purpose instead of having it available.
+# Builds everything `twine upload` needs: the sdist, the native wheel, and
+# a Pyodide/wasm32 wheel -- all left in dist/, validated with `twine
+# check`. Aborts up front, before building anything, if a required tool
+# for the Pyodide step is missing -- a silently incomplete dist/ (e.g. no
+# wasm wheel, with no indication why) is worse than a loud failure. Pass
+# --skip-pyodide to opt out of that step on purpose.
+#
+# The native wheel is tagged manylinux2014 directly by setup.py's
+# bdist_wheel (the Zig artifacts are fully statically linked -- no
+# PT_INTERP, no NEEDED entries, no libc dependency at all -- so they run
+# on any Linux and no auditwheel repair is needed).
 #
 # Does not upload anything. Once dist/ looks right, run yourself:
 #   twine upload dist/*
 #
-# Usage: scripts/release.sh [--skip-manylinux] [--skip-pyodide]
+# Usage: scripts/release.sh [--skip-pyodide]
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-skip_manylinux=0
 skip_pyodide=0
 for arg in "$@"; do
     case "$arg" in
-        --skip-manylinux) skip_manylinux=1 ;;
         --skip-pyodide) skip_pyodide=1 ;;
         *) echo "unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
-
-if [ "$skip_manylinux" = 0 ] && ! command -v auditwheel >/dev/null 2>&1; then
-    cat <<'EOF' >&2
-error: auditwheel not found -- can't produce a manylinux-tagged wheel.
-  Install with: pip install auditwheel, and run this script inside a
-  manylinux container (https://github.com/pypa/manylinux) so the repair
-  step checks against the right glibc baseline.
-  Pass --skip-manylinux to build only a linux_x86_64-tagged wheel instead.
-EOF
-    exit 1
-fi
 
 # `pyodide build` manages its own Emscripten (via its xbuildenv, see
 # below) independently of whatever's on PATH -- it does NOT use a system
@@ -67,13 +58,6 @@ mkdir -p dist
 
 echo "==> sdist + native wheel (python -m build)"
 python3 -m build
-
-if [ "$skip_manylinux" = 0 ]; then
-    echo "==> repairing native wheel for manylinux (auditwheel)"
-    for whl in dist/*.whl; do
-        auditwheel repair "$whl" -w dist/
-    done
-fi
 
 if [ "$skip_pyodide" = 0 ]; then
     echo "==> Pyodide/wasm32 wheel (pyodide build)"

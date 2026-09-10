@@ -191,10 +191,18 @@ try:
         CPython-version-specific one (e.g. `cp312-cp312-<platform>`):
         ctypes has no Python-version-specific ABI, so one wheel per
         platform covers every CPython 3.x, not one per minor version.
+
+        Also rewrites the raw `linux_<arch>` platform tag to a manylinux
+        one: PyPI rejects bare `linux_*` wheels (PEP 600), and the Zig
+        artifacts are fully statically linked (no libc dependency at all,
+        confirmed: no PT_INTERP, no dynamic GLIBC symbols), so they run
+        on any glibc -- manylinux2014 (glibc 2.17) is a safe floor.
         """
 
         def get_tag(self):
             _, _, plat = super().get_tag()
+            if plat.startswith("linux_"):
+                plat = "manylinux2014_" + plat[len("linux_"):]
             return "py3", "none", plat
 
 except ImportError:
